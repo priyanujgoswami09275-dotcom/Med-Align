@@ -1,0 +1,42 @@
+# Secrets — never commit (PROJECT.md §8)
+.env
+.env.*
+
+# OS noise
+.DS_Store
+
+# Logs
+*.log
+
+# Web app build + deps (source in web/ is committed; dist is rebuilt)
+web/node_modules/
+web/dist/
+web/node_modules/.tmp/
+
+# Agent tooling & artifacts
+.21st/
+.agents/
+.playwright/
+.playwright*/
+.superpower/
+.superpowers/
+.superpower*/
+
+# Design system
+
+# Project documentation & notes
+
+
+# Agent tooling and local docs (never commit)
+.21st/
+.agents/
+.playwright*/
+.superpower*/
+design-system/
+design system/
+PROJECT.md
+Project.md
+architecture.md
+ARCHITECTURE.md
+memory.md
+memory*.md

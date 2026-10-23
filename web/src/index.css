@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+@import "@fontsource-variable/lexend";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Dark theme follows the OS setting; there is no stored toggle. */
+@custom-variant dark (&:where(@media (prefers-color-scheme: dark) &));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+    --color-info: var(--info);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * MedAlign tokens (design-system/medalign/MASTER.md):
+ * light cyan + health green. --primary stays the CTA green (#047857, MASTER
+ * .btn-primary); cyan #0E7490 rides along as --info (interactive, ring, borders).
+ * Destructive red is reserved for destructive user actions only, never statuses.
+ */
+:root {
+    --background: #ecfeff;
+    --foreground: #164e63;
+    --card: #ffffff;
+    --card-foreground: #164e63;
+    --popover: #ffffff;
+    --popover-foreground: #164e63;
+    --primary: #047857;
+    --primary-foreground: #ffffff;
+    --secondary: #e8f1f6;
+    --secondary-foreground: #164e63;
+    --muted: #e8f1f6;
+    --muted-foreground: #475569;
+    --accent: #e8f1f6;
+    --accent-foreground: #164e63;
+    --destructive: #dc2626;
+    --border: #a5f3fc;
+    --input: #94a3b8;
+    --ring: #0e7490;
+    --success: #047857;
+    --warning: #b45309;
+    --info: #0e7490;
+    --radius: 0.5rem;
+    --shadow-md: 0 2px 8px rgba(6, 50, 60, 0.10);
+    --shadow-lg: 0 8px 20px rgba(6, 50, 60, 0.14);
+    --shadow-scroll: 0 14px 30px rgba(6, 50, 60, 0.12), 0 34px 60px rgba(16, 185, 129, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #08202a;
+    --foreground: #dff5fb;
+    --card: #0c2b36;
+    --card-foreground: #dff5fb;
+    --popover: #0c2b36;
+    --popover-foreground: #dff5fb;
+    --primary: #34d399;
+    --primary-foreground: #052e24;
+    --secondary: #123642;
+    --secondary-foreground: #dff5fb;
+    --muted: #123642;
+    --muted-foreground: #9fb8c4;
+    --accent: #123642;
+    --accent-foreground: #dff5fb;
+    --destructive: #ef4444;
+    --border: #1e4d5c;
+    --input: #2a5a66;
+    --ring: #22d3ee;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --info: #38bdf8;
+    --shadow-scroll: 0 14px 30px rgba(0, 0, 0, 0.22), 0 34px 60px rgba(16, 185, 129, 0.10);
+  }
+}
+
+/* Soft mesh-gradient backdrop: three low-saturation cyan/emerald blobs over the
+   background. Sized in rem so it never creates horizontal scroll at 375px. */
+@layer components {
+  .mesh-bg {
+    background:
+      radial-gradient(42rem 42rem at 12% -10%, rgba(34, 211, 238, 0.28), transparent 60%),
+      radial-gradient(38rem 38rem at 95% 8%, rgba(16, 185, 129, 0.20), transparent 60%),
+      radial-gradient(46rem 46rem at 50% 115%, rgba(165, 243, 252, 0.45), transparent 65%),
+      var(--background);
+  }
+  @media (prefers-color-scheme: dark) {
+    .mesh-bg {
+      background:
+        radial-gradient(42rem 42rem at 12% -10%, rgba(14, 116, 144, 0.40), transparent 60%),
+        radial-gradient(38rem 38rem at 95% 8%, rgba(4, 120, 87, 0.30), transparent 60%),
+        radial-gradient(46rem 46rem at 50% 115%, rgba(34, 211, 238, 0.16), transparent 65%),
+        var(--background);
+    }
+  }
+
+  /* Frosted glass card. Base = solid-ish mix that reads well WITHOUT backdrop
+     blur; the @supports block adds the blur and thins the surface where it
+     works. Border lightens screen-dark and deepens dark. */
+  .glass-card {
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background: color-mix(in srgb, var(--card) 68%, transparent);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Shared liquid-glass surface for every button variant. Keep the default
+     CTA on the green primary token; softer variants use a token-mixed glass
+     surface with an opaque-enough fallback for browsers without backdrop blur. */
+  .liquid-glass-btn {
+    border-color: color-mix(in srgb, var(--primary) 26%, transparent);
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.06) 48%,
+      rgba(4, 120, 87, 0.035)
+    );
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      inset 0 -1px 0 rgba(4, 120, 87, 0.14),
+      0 2px 8px rgba(6, 50, 60, 0.1),
+      0 0 12px rgba(16, 185, 129, 0.08);
+    transition:
+      box-shadow 180ms ease,
+      filter 180ms ease,
+      background-color 180ms ease;
+  }
+  .liquid-glass-btn:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.82),
+      inset 0 -1px 0 rgba(4, 120, 87, 0.18),
+      0 4px 12px rgba(6, 50, 60, 0.13),
+      0 0 16px rgba(16, 185, 129, 0.14);
+  }
+  .liquid-glass-outline { background-color: color-mix(in srgb, var(--card) 90%, var(--primary) 10%); }
+  .liquid-glass-secondary { background-color: color-mix(in srgb, var(--card) 72%, var(--secondary) 28%); }
+  .liquid-glass-ghost { background-color: color-mix(in srgb, var(--card) 95%, var(--primary) 5%); }
+  .liquid-glass-link { background-color: color-mix(in srgb, var(--card) 96%, var(--primary) 4%); }
+  .liquid-glass-danger {
+    border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.66),
+      inset 0 -1px 0 color-mix(in srgb, var(--destructive) 14%, transparent),
+      0 2px 8px rgba(6, 50, 60, 0.08);
+  }
+  @supports ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+    .liquid-glass-btn {
+      backdrop-filter: blur(10px);
+    }
+    .liquid-glass-outline { background-color: color-mix(in srgb, var(--card) 82%, var(--primary) 18%); }
+    .liquid-glass-secondary { background-color: color-mix(in srgb, var(--card) 55%, var(--secondary) 45%); }
+    .liquid-glass-ghost { background-color: color-mix(in srgb, var(--card) 90%, var(--primary) 10%); }
+    .liquid-glass-link { background-color: color-mix(in srgb, var(--card) 92%, var(--primary) 8%); }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .liquid-glass-btn {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background-image: none;
+    }
+    .liquid-glass-outline,
+    .liquid-glass-secondary,
+    .liquid-glass-ghost,
+    .liquid-glass-link { background-color: var(--card); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-glass-btn {
+      transition: none;
+    }
+  }
+
+  @supports ((backdrop-filter: blur(15px)) or (-webkit-backdrop-filter: blur(15px))) {
+    .glass-card {
+      background: color-mix(in srgb, var(--card) 46%, transparent);
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+    }
+  }
+  @media (prefers-color-scheme: dark) {
+    .glass-card {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  /* Hero gradient word. Cyan -> emerald, both AA-large against the light and
+     dark backgrounds; the rest of the heading keeps normal foreground. */
+  .grad-text {
+    background-image: linear-gradient(90deg, #0e7490, #047857);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+  @media (prefers-color-scheme: dark) {
+    .grad-text {
+      background-image: linear-gradient(90deg, #67e8f9, #34d399);
+    }
+  }
+}
+
+@layer utilities {
+  /* Perspective foreshortens controls slightly at the edges of the scroll
+     frame, so give compact controls a 48px layout box to preserve a 44px+ hit
+     target after the 3D projection. */
+  [data-scroll-card] :is(button, input, select, textarea):not(.sr-only) {
+    min-height: 48px;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+  /* Visible focus ring everywhere (MASTER.md buttons/inputs rule). */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

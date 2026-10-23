@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MedAlign — compare what the doctor said with what the pharmacy label shows</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:,">
+</head>
+<body data-step="home">
+  <main class="app">
+
+    <header class="app-header">
+      <span class="wordmark wordmark-static" id="wordmark-static">MedAlign</span>
+      <button type="button" id="wordmark-link" class="wordmark wordmark-button" hidden>MedAlign</button>
+    </header>
+
+    <!-- ============ Screen: Home (4th screen, added by explicit authorization) ============ -->
+    <section id="screen-home" class="screen" aria-labelledby="home-title">
+      <div class="home-grid">
+        <div class="home-lead">
+          <p class="badge-pill">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+            Free demo &#8226; Synthetic data
+          </p>
+          <h1 id="home-title">Spot <span class="grad-text">differences</span> between your doctor's note and your pharmacy label</h1>
+          <p class="home-intro">We read both lists and flag differences with evidence. We never decide which one is right. You stay in charge.</p>
+          <p class="btn-row home-actions">
+            <button type="button" id="btn-home-add" class="btn btn-primary">Start comparing</button>
+            <button type="button" id="btn-home-demo" class="btn btn-secondary">Try the demo case</button>
+          </p>
+        </div>
+
+        <div class="home-cards">
+          <article class="glass-card">
+            <h2>How it works</h2>
+            <ol class="steps">
+              <li class="step">
+                <span class="step-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="7" height="14" rx="2"/><rect x="13.5" y="5" width="7" height="14" rx="2"/><path d="M6.5 9h1.5M6.5 12h1.5M16.5 9h1.5M16.5 12h1.5"/></svg>
+                </span>
+                <span class="step-text"><span class="step-num">1</span>Add both lists</span>
+              </li>
+              <li class="step">
+                <span class="step-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.5 2.4 2.4L15.6 10"/></svg>
+                </span>
+                <span class="step-text"><span class="step-num">2</span>Check what we read</span>
+              </li>
+              <li class="step">
+                <span class="step-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M5 8.5h14"/><path d="m15.5 5 3.5 3.5-3.5 3.5"/><path d="M19 15.5H5"/><path d="m8.5 12-3.5 3.5L8.5 19"/></svg>
+                </span>
+                <span class="step-text"><span class="step-num">3</span>See the differences</span>
+              </li>
+            </ol>
+          </article>
+
+          <article class="glass-card example-card status-diff">
+            <h2>Example result</h2>
+            <p class="example-note">Example, synthetic data</p>
+            <div class="example-body" id="home-example"></div>
+          </article>
+
+          <article class="glass-card">
+            <h2>What we compare</h2>
+            <ul class="chips">
+              <li class="chip">Medicine name</li>
+              <li class="chip">Strength</li>
+              <li class="chip">How often</li>
+            </ul>
+            <p class="glass-note">We do not check allergies, interactions or dosing advice.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Screen 1: Add ============ -->
+    <section id="screen-add" class="screen" aria-labelledby="add-title" hidden>
+      <h1 id="add-title">MedAlign</h1>
+      <p class="intro">Put in what your doctor said and what your pharmacy label shows. We list what we read and where the two differ. You stay in charge of every answer.</p>
+
+      <div class="panel" data-source="doctor">
+        <h2>What the doctor said</h2>
+        <label class="field-label" for="doctor-text">Paste the words your doctor said:</label>
+        <textarea id="doctor-text" rows="5" placeholder="For example:&#10;Metformin 500 mg twice daily"></textarea>
+        <div class="upload-row">
+          <label class="field-label" for="doctor-image">or add a photo of the doctor's note:</label>
+          <input type="file" id="doctor-image" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+          <p class="file-status" id="doctor-file-name" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel" data-source="label">
+        <h2>What the pharmacy gave</h2>
+        <label class="field-label" for="label-text">Paste the words on the label:</label>
+        <textarea id="label-text" rows="5" placeholder="For example:&#10;Metformin 850 mg once daily"></textarea>
+        <div class="upload-row">
+          <label class="field-label" for="label-image">or add a photo of the label:</label>
+          <input type="file" id="label-image" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+          <p class="file-status" id="label-file-name" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <p class="btn-row">
+        <button type="button" id="btn-extract" class="btn btn-primary">Read both lists</button>
+        <button type="button" id="btn-demo" class="btn btn-secondary">Load demo case</button>
+      </p>
+      <p class="message" id="add-message" role="alert" aria-live="assertive" hidden></p>
+      <p class="tiny-note">Nothing about your lists leaves this page except the words we need to read, and nothing is stored anywhere.</p>
+    </section>
+
+    <!-- ============ Screen 2: Review ============ -->
+    <section id="screen-review" class="screen" aria-labelledby="review-title" hidden>
+      <h1 id="review-title">Check what we read</h1>
+      <p class="intro">Fix anything that does not look right. Yellow rows were hard to read, so please confirm them.</p>
+
+      <div class="panel" id="review-doctor">
+        <h2>What the doctor said</h2>
+        <div class="rows" id="doctor-rows"></div>
+        <button type="button" class="btn btn-add" data-add="doctor">+ Add a medicine the doctor mentioned</button>
+      </div>
+
+      <div class="panel" id="review-label">
+        <h2>What the pharmacy gave</h2>
+        <div class="rows" id="label-rows"></div>
+        <button type="button" class="btn btn-add" data-add="label">+ Add a medicine on the label</button>
+      </div>
+
+      <div id="review-message-slot" aria-live="polite"></div>
+
+      <p class="btn-row">
+        <button type="button" id="btn-back-add" class="btn btn-secondary">Back</button>
+        <button type="button" id="btn-compare" class="btn btn-primary">Compare</button>
+      </p>
+    </section>
+
+    <!-- ============ Screen 3: Report ============ -->
+    <section id="screen-report" class="screen" aria-labelledby="report-title" hidden>
+      <h1 id="report-title">What differs</h1>
+      <p class="intro">These are only differences between the two wordings. Which instruction to follow is a question for your pharmacist, not for this tool.</p>
+      <div id="report-cards"></div>
+
+      <p class="btn-row">
+        <button type="button" id="btn-back-review" class="btn btn-secondary">Back to checking</button>
+        <button type="button" id="btn-copy" class="btn btn-primary">Copy question for my pharmacist</button>
+      </p>
+      <textarea id="copy-target" class="sr-only-copy" aria-hidden="true" tabindex="-1"></textarea>
+      <p class="message" id="report-message" role="status" aria-live="polite" hidden></p>
+      <div id="visible-question" aria-live="polite" hidden></div>
+    </section>
+
+  </main>
+
+  <footer class="disclaimer">
+    <p>Demo with synthetic data. Decision support, not medical advice. If someone feels very unwell, call 112.</p>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
