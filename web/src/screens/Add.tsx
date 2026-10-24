@@ -108,7 +108,11 @@ export function Add({
     onBusyChange(false);
 
     if (outcomes.every((entry) => entry.outcome.failed)) {
-      setMessage('Both panels could not be read right now. Nothing was sent or saved.');
+      // Honest about what happened: the request WAS sent for reading; only
+      // storage is ruled out.
+      setMessage(
+        'Both panels could not be read right now. The text or photo you added was sent to the extraction service for reading. MedAlign does not save it. You can try again, or load the demo case.',
+      );
       setOfferDemo(true);
       return;
     }
@@ -302,8 +306,8 @@ export function Add({
         )}
 
         <p className="text-[12px] leading-5 text-muted-foreground">
-          Nothing about your lists leaves this page except the words we need to read, and nothing is
-          stored anywhere.
+          When you choose Read both lists, your text or photo is sent to the extraction service for
+          reading. MedAlign does not save it.
         </p>
       </motion.div>
     </section>

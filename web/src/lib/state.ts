@@ -42,11 +42,17 @@ export function emptyMedicine(): Medicine {
     frequency_text: null,
     evidence: null,
     uncertain: false,
+    // A manually added row was never machine-read from a photo.
+    fromImage: false,
+    origin: 'manual',
     rowId: newRowId(),
   };
 }
 
-function cloneRows(rows: Medicine[]): Medicine[] {
+// Extraction results are stamped with the panel's reading mode at the moment
+// they are stored, so provenance is a property of the ROW, not the panel: a
+// hand-typed row in a photo panel is never labeled as machine-read.
+function cloneRows(rows: Medicine[], fromImage = false, origin: 'extracted' | 'demo' = 'extracted'): Medicine[] {
   return rows.map((m) => ({
     name: m.name ?? null,
     strength_value: m.strength_value ?? null,
@@ -54,7 +60,8 @@ function cloneRows(rows: Medicine[]): Medicine[] {
     frequency_text: m.frequency_text ?? null,
     evidence: typeof m.evidence === 'string' ? m.evidence : '',
     uncertain: m.uncertain === true,
-    fromImage: m.fromImage,
+    fromImage: fromImage === true,
+    origin,
     rowId: newRowId(),
     original: {
       name: m.name ?? null,
@@ -87,6 +94,9 @@ export const initialState: AppState = {
 function patchSource(state: AppState, key: SourceKey, patch: Partial<SourceState>): AppState {
   return {
     ...state,
+    // Results describe the exact source rows that were compared. Any source
+    // mutation invalidates them so navigation can never reopen a stale report.
+    results: [],
     sources: {
       ...state.sources,
       [key]: { ...state.sources[key], ...patch },
@@ -101,25 +111,26 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setSource':
       return patchSource(state, action.key, action.patch);
     case 'setMedicines':
-      return patchSource(state, action.key, { medicines: cloneRows(action.medicines) });
+      // Stamp the rows with how this panel was read (photo vs pasted words) at
+      // the moment the extraction results are stored.
+      return patchSource(state, action.key, {
+        medicines: cloneRows(action.medicines, state.sources[action.key].fromImage),
+      });
     case 'setResults':
       return { ...state, results: action.results };
     case 'patchMedicine': {
       const src = state.sources[action.key];
       const medicines = src.medicines.map((m) => {
         if (m.rowId !== action.rowId) return m;
+        // Editing a manually entered row is not confirmation of an extraction;
+        // keep it manual and don't invent an extracted-original snapshot.
+        if (!m.original) return { ...m, ...action.patch };
         const confirmedFields = new Set(m.confirmedFields ?? []);
         if ('name' in action.patch) confirmedFields.add('name');
         if ('strength_value' in action.patch || 'strength_unit' in action.patch) confirmedFields.add('strength');
         if ('frequency_text' in action.patch) confirmedFields.add('frequency');
         const confirmed = [...confirmedFields];
-        const original = m.original ?? {
-          name: m.name,
-          strength_value: m.strength_value,
-          strength_unit: m.strength_unit,
-          frequency_text: m.frequency_text,
-          uncertain: m.uncertain,
-        };
+        const original = m.original;
         return {
           ...m,
           ...action.patch,
@@ -134,14 +145,9 @@ export function reducer(state: AppState, action: Action): AppState {
       const src = state.sources[action.key];
       const medicines = src.medicines.map((m) => {
         if (m.rowId !== action.rowId) return m;
+        if (!m.original) return m;
         const confirmedFields = [...new Set([...(m.confirmedFields ?? []), action.field])];
-        const original = m.original ?? {
-          name: m.name,
-          strength_value: m.strength_value,
-          strength_unit: m.strength_unit,
-          frequency_text: m.frequency_text,
-          uncertain: m.uncertain,
-        };
+        const original = m.original;
         return {
           ...m,
           original,
@@ -168,13 +174,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         step: 'review',
+        results: [],
         sources: {
           doctor: {
             kind: 'demo',
             text: DEMO_DOCTOR_TEXT,
             image: null,
             fromImage: false,
-            medicines: cloneRows(DEMO_DOCTOR_MEDICINES),
+            medicines: cloneRows(DEMO_DOCTOR_MEDICINES, false, 'demo'),
             note: null,
           },
           label: {
@@ -182,7 +189,7 @@ export function reducer(state: AppState, action: Action): AppState {
             text: DEMO_LABEL_TEXT,
             image: null,
             fromImage: false,
-            medicines: cloneRows(DEMO_LABEL_MEDICINES),
+            medicines: cloneRows(DEMO_LABEL_MEDICINES, false, 'demo'),
             note: null,
           },
         },

@@ -1,5 +1,5 @@
-// MedAlign — zero-dependency HTTP server (Node 20+ built-ins only).
-// Routes (architecture.md):
+// MedAlign — zero-dependency HTTP server (Node.js built-ins only).
+// Routes:
 //   GET  /api/health  -> { ok: true, keyConfigured: boolean }  (never the key)
 //   POST /api/extract -> validated medicines[] | { error, offerDemo: true }
 //   GET  /src/compare.js, /src/demo.js -> shared modules read-only, public/ mode
@@ -30,14 +30,26 @@ async function staticRoot() {
     return PUBLIC_DIR;
   }
 }
+
+/** True when the React front end has been built (web/dist/index.html exists). */
+async function webDistBuilt() {
+  try {
+    await fs.access(path.join(WEB_DIST_DIR, 'index.html'));
+    return true;
+  } catch {
+    return false;
+  }
+}
 // Only these src files are served — the pure modules the browser shares with tests.
 const SHARED_SRC = new Set(['compare.js', 'demo.js']);
-const PORT = process.env.PORT || 3000;
-
 const TEXT_MAX_CHARS = 8000;
 const IMAGE_MAX_BYTES = 4 * 1024 * 1024; // 4 MB decoded
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const BODY_MAX_BYTES = 6 * 1024 * 1024; // covers 4 MB base64 (4/3 inflation) + text
+const RATE_LIMIT_DEFAULT = 20;
+const RATE_WINDOW_DEFAULT_MS = 60_000;
+const CONCURRENT_DEFAULT = 2;
+const MAX_TRACKED_CLIENTS = 10_000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -78,116 +90,282 @@ function sendText(res, status, text) {
   res.end(text);
 }
 
-/** Read the raw body with a hard cap. Returns null when the client overshoots. */
+function sendApiError(res, status, error, message, offerDemo = false, extra = {}) {
+  sendJson(res, status, { error, message, offerDemo, ...extra });
+}
+
+/** Read at most limit bytes; oversize bodies are drained so the 413 can be sent. */
 function readBody(req, limit) {
+  const contentLength = Number(req.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > limit) {
+    req.resume();
+    return Promise.resolve({ tooLarge: true });
+  }
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
     req.on('data', (chunk) => {
+      if (settled) return;
       size += chunk.length;
       if (size > limit) {
-        resolve(null);
-        req.destroy();
+        chunks.length = 0;
+        finish(resolve, { tooLarge: true });
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on('end', () => finish(resolve, { tooLarge: false, body: Buffer.concat(chunks) }));
+    req.on('aborted', () => finish(reject, new Error('Request aborted')));
+    req.on('error', (error) => finish(reject, error));
   });
 }
 
-function badRequest(res, message) {
-  sendJson(res, 400, { error: 'BAD_REQUEST', message });
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function handleExtract(req, res) {
+function isBase64(value) {
+  if (value.length === 0 || value.length % 4 !== 0) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  const dataLength = value.length - padding;
+  for (let i = 0; i < dataLength; i += 1) {
+    const code = value.charCodeAt(i);
+    const alphaNumeric = (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122)
+      || (code >= 48 && code <= 57);
+    if (!alphaNumeric && code !== 43 && code !== 47) return false;
+  }
+  return true;
+}
+
+function createUsageGuard(env, now) {
+  const maxRequests = positiveInteger(env.EXTRACT_RATE_LIMIT_MAX, RATE_LIMIT_DEFAULT);
+  const windowMs = positiveInteger(env.EXTRACT_RATE_LIMIT_WINDOW_MS, RATE_WINDOW_DEFAULT_MS);
+  const maxConcurrent = positiveInteger(env.EXTRACT_MAX_CONCURRENT, CONCURRENT_DEFAULT);
+  const clients = new Map();
+  let active = 0;
+
+  function checkRate(req) {
+    // Use only the direct socket peer; forwarding headers are caller-controlled.
+    const key = req.socket?.remoteAddress || 'unknown';
+    const currentTime = now();
+    let bucket = clients.get(key);
+    if (!bucket || bucket.resetAt <= currentTime) {
+      if (bucket) clients.delete(key);
+      if (clients.size >= MAX_TRACKED_CLIENTS) {
+        clients.delete(clients.keys().next().value);
+      }
+      bucket = { count: 0, resetAt: currentTime + windowMs };
+      clients.set(key, bucket);
+    }
+    if (bucket.count >= maxRequests) {
+      return {
+        allowed: false,
+        retryAfter: Math.max(1, Math.ceil((bucket.resetAt - currentTime) / 1000)),
+      };
+    }
+    bucket.count += 1;
+    return { allowed: true };
+  }
+
+  function acquire() {
+    if (active >= maxConcurrent) return null;
+    active += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      active -= 1;
+    };
+  }
+
+  return { checkRate, acquire };
+}
+
+function extractionFailure(res, err) {
+  const code = err instanceof ExtractError ? err.code : 'UNEXPECTED';
+  const safeCodes = new Set([
+    'KEY_NOT_CONFIGURED', 'MODEL_NOT_CONFIGURED', 'AUTH_ERROR', 'RATE_LIMITED',
+    'TIMEOUT', 'NETWORK_ERROR', 'API_ERROR', 'BAD_RESPONSE', 'BAD_MODEL_JSON',
+    'NO_CANDIDATE',
+  ]);
+  console.error(`extract failure: ${safeCodes.has(code) ? code : 'UNEXPECTED'}`);
+
+  if (code === 'KEY_NOT_CONFIGURED' || code === 'MODEL_NOT_CONFIGURED' || code === 'AUTH_ERROR') {
+    const message = code === 'KEY_NOT_CONFIGURED'
+      ? 'Reading needs to be set up first: GEMINI_API_KEY is not set. You can still load the demo case.'
+      : code === 'MODEL_NOT_CONFIGURED'
+        ? 'Reading needs to be set up first: GEMINI_MODEL is not set. You can still load the demo case.'
+        : 'The reading service setup needs attention. You can still load the demo case.';
+    sendApiError(res, 503, 'EXTRACTION_NOT_CONFIGURED', message, true, { reason: code });
+    return;
+  }
+  if (code === 'BAD_RESPONSE' || code === 'BAD_MODEL_JSON' || code === 'NO_CANDIDATE') {
+    sendApiError(
+      res,
+      502,
+      'INVALID_EXTRACTION_RESPONSE',
+      'The reading service did not return a usable structured result. You can try again, or load the demo case.',
+      true,
+      { reason: code },
+    );
+    return;
+  }
+  if (code === 'RATE_LIMITED') {
+    sendApiError(
+      res,
+      503,
+      'EXTRACTION_UNAVAILABLE',
+      'The reading service is busy right now (tried twice). You can wait a moment and try again, or load the demo case.',
+      true,
+      { reason: code },
+    );
+    return;
+  }
+  if (code === 'TIMEOUT') {
+    sendApiError(
+      res,
+      503,
+      'EXTRACTION_UNAVAILABLE',
+      'The reading step took too long this time. You can try again, or load the demo case.',
+      true,
+      { reason: code },
+    );
+    return;
+  }
+  if (code === 'NETWORK_ERROR') {
+    sendApiError(
+      res,
+      503,
+      'EXTRACTION_UNAVAILABLE',
+      'The app could not reach the reading service. Check the connection, or load the demo case.',
+      true,
+      { reason: code },
+    );
+    return;
+  }
+  sendApiError(
+    res,
+    503,
+    'EXTRACTION_UNAVAILABLE',
+    'The reading step did not work this time. You can try again, or load the demo case.',
+    true,
+    { reason: code === 'API_ERROR' ? 'UPSTREAM_ERROR' : 'UNEXPECTED' },
+  );
+}
+
+async function handleExtract(req, res, { extract, usageGuard }) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED' });
+    sendApiError(res, 405, 'METHOD_NOT_ALLOWED', 'Use POST to read document content.');
     return;
   }
-  const raw = await readBody(req, BODY_MAX_BYTES);
-  if (raw === null) {
-    badRequest(res, 'That file is larger than the 4 MB limit for images.');
+  const rate = usageGuard.checkRate(req);
+  if (!rate.allowed) {
+    req.resume();
+    res.setHeader('Retry-After', String(rate.retryAfter));
+    sendApiError(
+      res,
+      429,
+      'RATE_LIMITED',
+      'Too many reading requests from this connection. Please wait before trying again, or load the demo case.',
+      true,
+    );
     return;
   }
+  const bodyResult = await readBody(req, BODY_MAX_BYTES);
+  if (bodyResult.tooLarge) {
+    sendApiError(res, 413, 'PAYLOAD_TOO_LARGE', 'The request body is larger than the 6 MB limit.');
+    return;
+  }
+  const raw = bodyResult.body;
   let body;
   try {
     body = JSON.parse(raw.toString('utf8'));
   } catch {
-    badRequest(res, 'The request could not be read. Please try again.');
+    sendApiError(res, 400, 'BAD_REQUEST', 'The request could not be read. Please try again.');
     return;
   }
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-    badRequest(res, 'The request could not be read. Please try again.');
+    sendApiError(res, 400, 'BAD_REQUEST', 'The request could not be read. Please try again.');
     return;
   }
 
   const input = {};
   if (typeof body.text === 'string') {
     if (body.text.length > TEXT_MAX_CHARS) {
-      badRequest(res, 'The pasted text is longer than the 8,000-character limit. Please paste a shorter part of it.');
+      sendApiError(
+        res,
+        413,
+        'PAYLOAD_TOO_LARGE',
+        'The pasted text is longer than the 8,000-character limit. Please paste a shorter part of it.',
+      );
       return;
     }
     if (body.text.trim() === '') {
-      badRequest(res, 'There is no text to read yet. Paste the list or add an image first.');
+      sendApiError(res, 400, 'BAD_REQUEST', 'There is no text to read yet. Paste the list or add an image first.');
       return;
     }
     input.text = body.text;
-  } else if (body.image && typeof body.image === 'object') {
+  } else if (body.image && typeof body.image === 'object' && !Array.isArray(body.image)) {
     const { mime, data } = body.image;
     if (!IMAGE_MIMES.has(mime) || typeof data !== 'string' || data === '') {
-      badRequest(res, 'Only PNG, JPEG, or WebP images can be read.');
+      sendApiError(res, 400, 'BAD_REQUEST', 'Only PNG, JPEG, or WebP images can be read.');
       return;
     }
-    const bytes = Buffer.byteLength(data, 'base64');
+    if (!isBase64(data)) {
+      sendApiError(res, 400, 'BAD_REQUEST', 'The image data could not be read. Please choose a PNG, JPEG, or WebP image.');
+      return;
+    }
+    const bytes = Buffer.from(data, 'base64').length;
     if (bytes > IMAGE_MAX_BYTES) {
-      badRequest(res, 'That image is larger than the 4 MB limit.');
+      sendApiError(res, 413, 'PAYLOAD_TOO_LARGE', 'That image is larger than the 4 MB limit.');
       return;
     }
     input.image = { mime, data };
   } else {
-    badRequest(res, 'There is nothing to read yet. Paste the list or add an image first.');
+    sendApiError(res, 400, 'BAD_REQUEST', 'There is nothing to read yet. Paste the list or add an image first.');
     return;
   }
 
+  const release = usageGuard.acquire();
+  if (!release) {
+    res.setHeader('Retry-After', '1');
+    sendApiError(
+      res,
+      429,
+      'EXTRACTION_BUSY',
+      'The reading service is handling other requests. Please try again shortly, or load the demo case.',
+      true,
+    );
+    return;
+  }
   try {
-    const { medicines } = await extractMedicines(input);
+    const result = await extract(input);
+    if (!Array.isArray(result?.medicines)) {
+      sendApiError(
+        res,
+        502,
+        'INVALID_EXTRACTION_RESPONSE',
+        'The reading service did not return a usable structured result. You can try again, or load the demo case.',
+        true,
+        { reason: 'INVALID_SERVICE_RESULT' },
+      );
+      return;
+    }
+    const { medicines } = result;
     sendJson(res, 200, { medicines });
   } catch (err) {
-    if (err === null || !(err instanceof ExtractError)) {
-      sendJson(res, 503, {
-        error: 'EXTRACTION_UNAVAILABLE',
-        offerDemo: true,
-        message: 'The reading step is not working right now. You can try again, or load the demo case.',
-      });
-      return;
-    }
-    // Error detail is logged to the server console only as a code, never the body.
-    console.error(`extract failure: ${err.code}`);
-    if (err.code === 'KEY_NOT_CONFIGURED' || err.code === 'MODEL_NOT_CONFIGURED') {
-      sendJson(res, 503, {
-        error: 'EXTRACTION_UNAVAILABLE',
-        offerDemo: true,
-        keyConfigured: false,
-        message: 'Reading needs to be set up first: GEMINI_API_KEY and GEMINI_MODEL are not set. You can still load the demo case.',
-      });
-      return;
-    }
-    if (err.code === 'RATE_LIMITED') {
-      sendJson(res, 503, {
-        error: 'EXTRACTION_UNAVAILABLE',
-        offerDemo: true,
-        message: 'The reading service is busy right now (tried twice). You can wait a moment and try again, or load the demo case.',
-      });
-      return;
-    }
-    sendJson(res, 503, {
-      error: 'EXTRACTION_UNAVAILABLE',
-      offerDemo: true,
-      message: 'The reading step did not work this time. You can try again, or load the demo case.',
-    });
+    extractionFailure(res, err);
+  } finally {
+    release();
   }
 }
 
@@ -234,53 +412,75 @@ async function serveStatic(res, pathname, rootDir, opts) {
   res.end(data);
 }
 
-const server = http.createServer(async (req, res) => {
-  try {
-    const host = req.headers.host || 'localhost';
-    const pathname = new URL(req.url, `http://${host}`).pathname;
+export function createServer(options = {}) {
+  const env = options.env ?? process.env;
+  const extract = options.extractMedicines ?? extractMedicines;
+  const usageGuard = createUsageGuard(env, options.now ?? Date.now);
 
-    if (pathname === '/api/health') {
+  return http.createServer(async (req, res) => {
+    try {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+
+      if (pathname === '/api/health') {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.setHeader('Allow', 'GET, HEAD');
+          sendApiError(res, 405, 'METHOD_NOT_ALLOWED', 'Use GET to check service configuration.');
+          return;
+        }
+        // Never expose the key itself — only whether it is configured.
+        sendJson(res, 200, {
+          ok: true,
+          keyConfigured: typeof env.GEMINI_API_KEY === 'string' && env.GEMINI_API_KEY.trim() !== '',
+          modelConfigured: typeof env.GEMINI_MODEL === 'string' && env.GEMINI_MODEL.trim() !== '',
+        });
+        return;
+      }
+
+      if (pathname === '/api/extract') {
+        await handleExtract(req, res, { extract, usageGuard });
+        return;
+      }
+
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.setHeader('Allow', 'GET, HEAD');
-        sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED' });
+        sendApiError(res, 405, 'METHOD_NOT_ALLOWED', 'This route only supports GET and HEAD.');
         return;
       }
-      // Never expose the key itself — only whether it is configured.
-      sendJson(res, 200, {
-        ok: true,
-        keyConfigured: Boolean(process.env.GEMINI_API_KEY),
-        modelConfigured: Boolean(process.env.GEMINI_MODEL),
-      });
-      return;
-    }
-
-    if (pathname === '/api/extract') {
-      await handleExtract(req, res);
-      return;
-    }
-
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.setHeader('Allow', 'GET, HEAD');
-      sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
-    const root = await staticRoot();
-    if (pathname.startsWith('/src/')) {
-      // The read-only module allowlist serves the vanilla front end only; the
-      // built app bundles the same modules itself.
-      if (root === WEB_DIST_DIR) {
-        sendText(res, 404, 'Not found');
+      const root = await staticRoot();
+      if (pathname.startsWith('/src/')) {
+        // The read-only module allowlist serves the vanilla front end only; the
+        // built app bundles the same modules itself.
+        if (root === WEB_DIST_DIR) {
+          sendText(res, 404, 'Not found');
+          return;
+        }
+        await serveSharedSrc(res, pathname);
         return;
       }
-      await serveSharedSrc(res, pathname);
-      return;
+      await serveStatic(res, pathname, root, { inlineStyles: root === WEB_DIST_DIR });
+    } catch {
+      if (!res.destroyed && !res.writableEnded) {
+        sendApiError(res, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
+      }
     }
-    await serveStatic(res, pathname, root, { inlineStyles: root === WEB_DIST_DIR });
-  } catch {
-    sendJson(res, 500, { error: 'INTERNAL_ERROR' });
-  }
-});
+  });
+}
 
-server.listen(PORT, () => {
-  console.log(`MedAlign running at http://localhost:${PORT}`);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const port = process.env.PORT || 3000;
+  createServer().listen(port, () => {
+    console.log(`MedAlign running at http://localhost:${port}`);
+    // Never silently fall back: without a build, the older vanilla front end is
+    // served and it does not have the newer review features. Say so, and how
+    // to get the full app.
+    void webDistBuilt().then((built) => {
+      if (!built) {
+        console.warn(
+          '[MedAlign] web/dist has not been built, so the older fallback front end (public/) is being served. ' +
+            'It lacks the newer review features: source coverage, mismatch explanations, and the uncertainty resolver. ' +
+            'Run "npm run build" to build the full React front end, then restart the server.',
+        );
+      }
+    });
+  });
+}

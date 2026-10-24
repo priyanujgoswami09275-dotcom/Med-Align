@@ -83,9 +83,8 @@ test('row uncertainty remains until each extraction field has been confirmed', (
   assert.equal(rowUncertainAfterConfirm(medicine({ uncertain: false }), []), false);
 });
 
-test('editing one field while another remains unresolved produces CANT_TELL for the unresolved pair', async () => {
-  // Simulate the reducer patchMedicine action effect: user edits frequency to match,
-  // but the row remains uncertain because not every field has been confirmed.
+test('a reviewed field stays blocked until uncertain medicine identity is confirmed', async () => {
+  // A frequency edit is not compared while the extracted name is still unconfirmed.
   const editedDoctor = [
     {
       name: 'Metformin',
@@ -106,7 +105,7 @@ test('editing one field while another remains unresolved produces CANT_TELL for 
   const { compare } = await import('../src/compare.js');
   const results = compare(editedDoctor, label);
 
-  // The pair must be CANT_TELL because one row is still uncertain
+  // The pair must be CANT_TELL because its identity and strength remain uncertain.
   const metforminPair = results.find((r) => r.displayName === 'Metformin');
   assert.equal(metforminPair.status, 'CANT_TELL');
 
@@ -121,6 +120,29 @@ test('editing one field while another remains unresolved produces CANT_TELL for 
   const freqField = metforminPair.fields.find((f) => f.field === 'frequency');
   assert.equal(freqField.doctor.normalized, 1);
   assert.equal(freqField.label.normalized, 1);
+});
+
+test('comparison uses confirmed fields while other fields remain uncertain', async () => {
+  const doctor = [
+    {
+      ...medicine({ strength_value: 500, frequency_text: 'once daily', uncertain: true }),
+      confirmedFields: ['name', 'frequency'],
+    },
+  ];
+  const label = [
+    medicine({ strength_value: 850, frequency_text: 'once daily' }),
+  ];
+  const { compare } = await import('../src/compare.js');
+  const [result] = compare(doctor, label);
+
+  assert.equal(result.status, 'CANT_TELL');
+  assert.deepEqual(result.differing, []);
+  assert.deepEqual(result.unknown, ['strength']);
+  assert.deepEqual(result.fields.map((field) => [field.field, field.outcome, field.unresolved]), [
+    ['name', 'match', false],
+    ['strength', 'not_compared', true],
+    ['frequency', 'match', false],
+  ]);
 });
 
 test('reducing uncertainty on every field of a row unblocks comparison', async () => {

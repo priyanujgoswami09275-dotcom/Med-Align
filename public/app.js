@@ -164,7 +164,14 @@ async function postExtract(body) {
       offerDemo: Boolean(data && data.offerDemo),
     };
   }
-  return { failed: false, medicines: Array.isArray(data.medicines) ? data.medicines : [] };
+  if (!data || !Array.isArray(data.medicines)) {
+    return {
+      failed: true,
+      message: 'The reading step did not return a usable result. You can try again soon, or load the demo case.',
+      offerDemo: true,
+    };
+  }
+  return { failed: false, medicines: data.medicines };
 }
 
 async function startExtraction() {
@@ -193,7 +200,7 @@ async function startExtraction() {
   readButton.textContent = 'Read both lists';
 
   if (sources.every((k) => outcomes[k].failed)) {
-    const joint = 'Both panels could not be read right now. Nothing was sent or saved.';
+    const joint = 'Both panels could not be read right now. The text or photo you added was sent to the extraction service for reading. MedAlign does not save it. You can try again, or load the demo case.';
     showMessage(messageNode, joint);
     addDemoButtons(messageNode, loadDemo, () => { hideMessage(messageNode); startExtraction(); });
     return;

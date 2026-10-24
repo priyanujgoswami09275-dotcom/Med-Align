@@ -36,11 +36,9 @@ const CARD_ACCENT: Record<string, string> = {
 function EvidenceBlock({
   title,
   medicine,
-  fromImage,
 }: {
   title: string;
   medicine: Medicine | null;
-  fromImage: boolean;
 }) {
   if (!medicine) {
     return (
@@ -67,7 +65,11 @@ function EvidenceBlock({
           <span key={line}>{line}</span>
         ))}
       </p>
-      {medicine.evidence ? (
+      {medicine.origin === 'manual' ? (
+        <p className="mt-3 text-[12px] text-muted-foreground">
+          Entered by you; no extracted source quote is available for this row.
+        </p>
+      ) : medicine.evidence ? (
         <>
           <p className="mt-3 text-[12px] text-muted-foreground">exact words that were read:</p>
           <q className="mt-1 block text-[13px] text-foreground italic">{medicine.evidence}</q>
@@ -75,7 +77,7 @@ function EvidenceBlock({
       ) : (
         <p className="mt-3 text-[12px] text-muted-foreground">no exact words were available.</p>
       )}
-      {fromImage && (
+      {medicine.fromImage === true && (
         <p className="mt-2 text-[12px] text-muted-foreground">
           read from image, not machine-verified
         </p>
@@ -84,7 +86,7 @@ function EvidenceBlock({
   );
 }
 
-function ReportCard({ result, sources }: { result: Result; sources: Record<SourceKey, SourceState> }) {
+function ReportCard({ result }: { result: Result }) {
   const presentation = STATUS_PRESENTATION[result.status] ?? STATUS_PRESENTATION.CANT_TELL;
 
   return (
@@ -114,12 +116,10 @@ function ReportCard({ result, sources }: { result: Result; sources: Record<Sourc
         <EvidenceBlock
           title="What the doctor said"
           medicine={result.doctor}
-          fromImage={sources.doctor.fromImage}
         />
         <EvidenceBlock
           title="What the pharmacy label showed"
           medicine={result.label}
-          fromImage={sources.label.fromImage}
         />
       </div>
       <WhyFlagged result={result} />
@@ -130,10 +130,12 @@ function ReportCard({ result, sources }: { result: Result; sources: Record<Sourc
 export function Report({
   results,
   sources,
+  onOpenResolver,
   onBack,
 }: {
   results: Result[];
   sources: Record<SourceKey, SourceState>;
+  onOpenResolver: () => void;
   onBack: () => void;
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'blocked'>('idle');
@@ -235,13 +237,24 @@ export function Report({
           <motion.div variants={riseVariants}>
             <CoverageStrip sources={sources} results={results} waitingReviewCount={waitingReviewCount} />
           </motion.div>
+          {waitingReviewCount > 0 && (
+            <motion.div variants={riseVariants}>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 px-4 text-[13px]"
+                onClick={onOpenResolver}
+              >
+                Review {waitingReviewCount} unresolved fields
+              </Button>
+            </motion.div>
+          )}
 
           <motion.div variants={riseVariants} className="flex flex-col gap-4">
             {results.map((result, index) => (
               <ContainerScroll key={(result.key ?? 'unnamed') + '-' + index}>
                 <ReportCard
                   result={result}
-                  sources={sources}
                 />
               </ContainerScroll>
             ))}

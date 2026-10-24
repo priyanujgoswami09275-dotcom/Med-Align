@@ -61,7 +61,7 @@ export function CoverageStrip({
         </summary>
         <div id={detailsId} className="grid gap-3 pb-2 text-[13px] text-foreground sm:grid-cols-2">
           <p>
-            Fields with values available: {coverage.fieldsCompared + coverage.oneSidedFields}
+            Fields with values available: {coverage.fieldsAvailable}
           </p>
           <p>Fields waiting for your review: {waitingReviewCount}</p>
           <p>Fields that could not be compared: {coverage.fieldsUnresolved}</p>

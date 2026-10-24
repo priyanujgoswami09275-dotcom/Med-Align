@@ -1,4 +1,4 @@
-# Secrets — never commit (PROJECT.md §8)
+# Secrets — never commit
 .env
 .env.*
 
@@ -24,19 +24,12 @@ web/node_modules/.tmp/
 
 # Design system
 
-# Project documentation & notes
-
-
-# Agent tooling and local docs (never commit)
+# Agent tooling and local notes (never commit)
 .21st/
 .agents/
 .playwright*/
 .superpower*/
 design-system/
 design system/
-PROJECT.md
-Project.md
-architecture.md
-ARCHITECTURE.md
 memory.md
 memory*.md

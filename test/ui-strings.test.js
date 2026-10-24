@@ -64,7 +64,11 @@ async function walk(dir) {
 
 /** UI strings in a React TS/TSX file: string literals + JSX text nodes. */
 function tsxStrings(source) {
-  const noComments = stripComments(source);
+  // Utility classes are implementation details, not user-facing copy.
+  const noComments = stripComments(source).replace(
+    /\bclassName\s*=\s*(?:"[^"]*"|'[^']*')/g,
+    'className=""',
+  );
   const out = [...jsStrings(noComments)];
   for (const m of noComments.matchAll(/>([^<>{}]+)</g)) {
     if (m[1].trim()) out.push(m[1]);
@@ -143,7 +147,9 @@ test('no banned words in the React UI strings (web/src)', async () => {
   for (const file of files) {
     for (const s of tsxStrings(await readFile(file, 'utf8'))) {
       scanned += 1;
-      assert.ok(!BANNED.test(s), `banned word in ${path.relative(ROOT, file)}: ${JSON.stringify(s)}`);
+      // This CSS environment lookup is a style token, not UI copy.
+      const copy = s.replace(/env\(safe-area-inset-bottom\)/g, '');
+      assert.ok(!BANNED.test(copy), `banned word in ${path.relative(ROOT, file)}: ${JSON.stringify(s)}`);
     }
   }
   assert.ok(scanned > 20, `expected many React UI strings, got ${scanned}`);
@@ -166,7 +172,7 @@ test('React copy pins: five status labels, confirm tag, copy confirmation', asyn
     'The photo could not be opened. Please try another one.',
     'That pasted text is longer than the 8,000-character limit. Please paste a shorter part of it.',
     'Add something first: paste the words for a panel, or choose a photo for it.',
-    'Both panels could not be read right now. Nothing was sent or saved.',
+    'Both panels could not be read right now. The text or photo you added was sent to the extraction service for reading. MedAlign does not save it. You can try again, or load the demo case.',
     'The reading step did not work this time. You can try again soon, or load the demo case.',
     'The app could not reach the reading service. Check the connection, or load the demo case.',
     'No medicine could be read from ',
@@ -232,6 +238,136 @@ test('Review resolver is sourced from state, focuses matching fields, and preser
   assert.ok(state.includes('rowUncertainAfterConfirm'));
   assert.ok(state.includes('original:'));
   assert.ok(report.includes('waitingReviewCount={waitingReviewCount}'));
+});
+
+test('a missing React build warns instead of silently serving the older front end', async () => {
+  const server = await readFile(path.join(ROOT, 'server.js'), 'utf8');
+  // The actionable startup warning: which front end is served, what it lacks,
+  // and the exact build command. No silent fallback on a fresh clone.
+  assert.ok(
+    server.includes('web/dist has not been built'),
+    'server must state that the React build is missing',
+  );
+  assert.ok(
+    server.includes('older fallback front end'),
+    'server must name the fallback front end as older',
+  );
+  assert.ok(
+    server.includes('npm run build'),
+    'the warning must give the build command',
+  );
+  assert.ok(
+    server.includes('source coverage'),
+    'the warning must say the fallback lacks the newer review features',
+  );
+});
+
+test('image provenance is per row, so manual rows are never labeled as machine-read from a photo', async () => {
+  const state = await readFile(path.join(ROOT, 'web/src/lib/state.ts'), 'utf8');
+  const review = await readFile(path.join(ROOT, 'web/src/screens/Review.tsx'), 'utf8');
+  const row = await readFile(path.join(ROOT, 'web/src/components/MedicineRow.tsx'), 'utf8');
+  const report = await readFile(path.join(ROOT, 'web/src/screens/Report.tsx'), 'utf8');
+  const explainer = await readFile(path.join(ROOT, 'src/explainer.js'), 'utf8');
+  const why = await readFile(path.join(ROOT, 'web/src/components/WhyFlagged.tsx'), 'utf8');
+
+  // Extraction results are stamped with the panel's reading mode at the moment
+  // they are stored; manually added rows stay explicitly false.
+  assert.ok(
+    state.includes('cloneRows(action.medicines, state.sources[action.key].fromImage)'),
+    'setMedicines must stamp each row with the panel reading mode',
+  );
+  assert.ok(
+    /function emptyMedicine\(\): Medicine \{[\s\S]*?fromImage: false/.test(state),
+    'manually added rows must carry an explicit false provenance',
+  );
+
+  // The row renders its own flag; no component inherits the panel's flag.
+  assert.ok(!review.includes('fromImage={source.fromImage}'), 'Review must not pass the panel flag to rows');
+  assert.ok(row.includes('row.fromImage === true'), 'MedicineRow reads the row-level flag');
+  assert.ok(!row.includes('fromImage: boolean;'), 'MedicineRow no longer takes a panel-level flag prop');
+  assert.ok(
+    !report.includes('sources.doctor.fromImage') && !report.includes('sources.label.fromImage'),
+    'Report evidence must not use the panel-level flag',
+  );
+  assert.ok(report.includes('medicine.fromImage === true'), 'Report reads the row-level flag');
+  assert.ok(state.includes("origin: 'manual'"), 'manual rows have an explicit origin');
+  assert.ok(state.includes('if (!m.original) return { ...m, ...action.patch }'), 'manual edits do not invent an extracted original');
+  assert.ok(explainer.includes("origin: medicine.origin ?? (original ? 'extracted' : 'manual')"));
+  assert.ok(why.includes('Entered by you; not extracted from a document.'));
+  assert.ok(report.includes('Entered by you; no extracted source quote is available for this row.'));
+});
+
+test('Report routes unresolved fields back to the focusable resolver queue', async () => {
+  const app = await readFile(path.join(ROOT, 'web/src/App.tsx'), 'utf8');
+  const report = await readFile(path.join(ROOT, 'web/src/screens/Report.tsx'), 'utf8');
+  const resolver = await readFile(path.join(ROOT, 'web/src/components/ResolverQueue.tsx'), 'utf8');
+  assert.ok(report.includes('onClick={onOpenResolver}'));
+  assert.ok(app.includes("document.getElementById('resolver')?.focus()"));
+  assert.ok(resolver.includes('id="resolver" tabIndex={-1}'));
+});
+
+test('extraction-failure copy never claims nothing was sent after a read attempt', async () => {
+  const add = await readFile(path.join(ROOT, 'web/src/screens/Add.tsx'), 'utf8');
+  const appJs = await readFile(path.join(ROOT, 'public/app.js'), 'utf8');
+  for (const [name, source] of [['web/src/screens/Add.tsx', add], ['public/app.js', appJs]]) {
+    assert.ok(
+      !stripComments(source).includes('Nothing was sent or saved'),
+      `${name} must not claim nothing was sent after the request was submitted`,
+    );
+  }
+  // The honest policy: reading sends the words; only storage is ruled out.
+  assert.ok(add.includes('sent to the extraction service'), 'Add states that reading submits data');
+});
+
+test('resolver queue announces count changes and routes unit problems to the unit control', async () => {
+  const resolver = await readFile(path.join(ROOT, 'web/src/components/ResolverQueue.tsx'), 'utf8');
+  const live = await readFile(path.join(ROOT, 'web/src/components/LiveRegion.tsx'), 'utf8');
+  // Screen readers hear the queue shrink as fields are edited or confirmed.
+  assert.ok(resolver.includes('LiveRegion'), 'ResolverQueue announces through the shared live region');
+  assert.ok(live.includes('aria-live="polite"'), 'the live region is polite');
+  // An unreadable unit is a unit-select problem, not a dose-number problem.
+  assert.ok(
+    /unreadable_unit[\s\S]{0,200}-unit/.test(resolver) || resolver.includes("inputId(sourceKey, rowId, 'strength') + '-unit'"),
+    'unreadable_unit items focus the unit select',
+  );
+});
+
+test('field warnings distinguish missing input from uncertain extraction', async () => {
+  const row = await readFile(path.join(ROOT, 'web/src/components/MedicineRow.tsx'), 'utf8');
+  assert.ok(row.includes('resolverItems'), 'field warnings use the shared uncertainty reasons');
+  assert.ok(row.includes('missing — add a value'), 'blank manual fields are described as missing');
+  assert.ok(row.includes('hard to read — please confirm'), 'uncertain extracted values still request review');
+  assert.ok(row.includes('unit unreadable — choose a unit'), 'an unreadable strength unit points to the unit field');
+  assert.ok(!row.includes('row.uncertain || !fieldIsReadable'), 'row uncertainty does not relabel every field');
+});
+
+test('editing sources invalidates old report results before Report can be reopened', async () => {
+  const state = await readFile(path.join(ROOT, 'web/src/lib/state.ts'), 'utf8');
+  const app = await readFile(path.join(ROOT, 'web/src/App.tsx'), 'utf8');
+  assert.ok(/function patchSource[\s\S]*?results:\s*\[\]/.test(state), 'source mutations clear stale results');
+  assert.ok(/case 'loadDemo':[\s\S]*?results:\s*\[\]/.test(state), 'loading a new demo clears stale results');
+  assert.ok(app.includes('reportReady = state.results.length > 0'), 'Report navigation follows current results');
+});
+
+test('privacy wording distinguishes extraction transmission from MedAlign storage', async () => {
+  const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
+  const add = await readFile(path.join(ROOT, 'web/src/screens/Add.tsx'), 'utf8');
+  const bento = await readFile(path.join(ROOT, 'web/src/components/ui/feature-section-with-bento-grid.tsx'), 'utf8');
+  for (const [name, source] of [['Home', home], ['Add', add], ['features', bento]]) {
+    assert.ok(source.includes('sent to the extraction service'), `${name} explains transmission for reading`);
+    assert.ok(source.includes('MedAlign does not save'), `${name} scopes the storage claim to MedAlign`);
+    assert.ok(!source.includes('Nothing is stored anywhere'), `${name} does not make a provider-wide claim`);
+  }
+});
+
+test('coverage reports raw field availability separately from actual comparisons', async () => {
+  const coverage = await readFile(path.join(ROOT, 'src/coverage.js'), 'utf8');
+  const types = await readFile(path.join(ROOT, 'web/src/lib/types.ts'), 'utf8');
+  const strip = await readFile(path.join(ROOT, 'web/src/components/CoverageStrip.tsx'), 'utf8');
+  assert.ok(coverage.includes('fieldsAvailable'), 'shared coverage computes field availability');
+  assert.ok(types.includes('fieldsAvailable: number'), 'the coverage type exposes the new count');
+  assert.ok(strip.includes('coverage.fieldsAvailable'), 'the UI shows availability independently of compared fields');
+  assert.ok(strip.includes('Fields with values available:'), 'the UI labels the availability count');
 });
 
 test('tool screens use the reduced-motion-aware scroll container, not the Home page', async () => {
@@ -300,55 +436,98 @@ test('buttons carry the MedAlign liquid-glass treatment (white/green theme, ever
   assert.ok(button.includes('focus-visible:ring-ring/50'), 'visible focus ring survives');
   assert.ok(styles.includes('prefers-reduced-motion: reduce'), 'reduced motion is honored');
 
-  // Home CTAs keep their copy and shared Button wiring.
+  // Home CTAs keep their copy; the shared Button import moved into the hero.
   const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
   const wordmark = await readFile(path.join(ROOT, 'web/src/components/Wordmark.tsx'), 'utf8');
   const dropzone = await readFile(path.join(ROOT, 'web/src/components/Dropzone.tsx'), 'utf8');
   const medicineRow = await readFile(path.join(ROOT, 'web/src/components/MedicineRow.tsx'), 'utf8');
+  const landingHero = await readFile(path.join(ROOT, 'web/src/components/ui/ink-orbit-hero.tsx'), 'utf8');
   assert.ok(home.includes('Start comparing'));
   assert.ok(home.includes('Try the demo case'));
-  assert.ok(home.includes("from '@/components/ui/button'"));
+  assert.ok(landingHero.includes('./button'), 'landing CTAs keep the shared glass Button');
   assert.ok(wordmark.includes('liquid-glass-btn'), 'in-app wordmark button also has the glass treatment');
   assert.ok(dropzone.includes('liquid-glass-btn'), 'photo chooser also has the glass treatment');
   assert.ok(dropzone.includes('motion-reduce:transition-none'));
   assert.ok(medicineRow.includes('variant="destructive"'), 'delete actions retain a destructive visual distinction');
 });
 
-test('header navigation is the animated breadcrumb with back-only navigation', async () => {
-  const breadcrumb = await readFile(path.join(ROOT, 'web/src/components/Breadcrumb.tsx'), 'utf8');
+test('workflow navigation is a responsive step rail with explained lockouts', async () => {
+  const stepNav = await readFile(path.join(ROOT, 'web/src/components/StepNav.tsx'), 'utf8');
   const app = await readFile(path.join(ROOT, 'web/src/App.tsx'), 'utf8');
 
-  // The stepper is retired; App renders the breadcrumb on the tool screens.
-  assert.ok(app.includes('<Breadcrumb step={state.step} onNavigate={go} />'), 'App must render the breadcrumb');
-  assert.ok(!app.includes('StepIndicator'), 'App must not render the retired stepper');
-  await assert.rejects(
-    readFile(path.join(ROOT, 'web/src/components/StepIndicator.tsx'), 'utf8'),
-    'StepIndicator.tsx must be deleted once the breadcrumb replaces it',
-  );
+  // App renders the same four-step workflow on every screen.
+  assert.ok(app.includes('<StepNav'), 'App must render the step navigation');
+  assert.ok(!app.includes('<Breadcrumb'), 'the breadcrumb is retired');
+  assert.ok(app.includes('reviewReady'), 'Review availability is derived from source data');
+  assert.ok(app.includes('reportReady'), 'Report availability is derived from results');
 
-  // Home stays minimal (no header navigation there).
+  // Four steps, in order, with the required accessible names.
+  for (const label of ['Home', 'Add', 'Review', 'Report']) {
+    assert.ok(stepNav.includes(`label: '${label}'`), `step label missing: ${label}`);
+  }
+  assert.ok(stepNav.includes('aria-label="Workflow steps"'));
+  assert.ok(stepNav.includes('aria-current={'), 'current step is exposed as aria-current="step"');
+  assert.ok(stepNav.includes('aria-disabled={!enabled'), 'locked steps use aria-disabled');
+  assert.ok(stepNav.includes('aria-describedby={!enabled'), 'locked steps point to their reason');
+
+  // Locked steps explain themselves; all controls meet the 44px target rule.
+  assert.ok(stepNav.includes('Read or add a medicine first.'));
+  assert.ok(stepNav.includes('Compare the two lists first.'));
+  assert.ok(stepNav.includes('min-h-11'));
+  assert.ok(stepNav.includes('data-step-nav'));
+  assert.ok(stepNav.includes('lg:sticky'), 'desktop rail is visible alongside content');
+  assert.ok(stepNav.includes('fixed inset-x-0 bottom-0'), 'mobile navigation is fixed above the safe area');
+  assert.ok(stepNav.includes('pb-[calc(env(safe-area-inset-bottom)+0.5rem)]'), 'mobile bar respects the device safe area');
+});
+
+test('Home is a landing page: adapted hero, anchor nav, and bento features', async () => {
+  const hero = await readFile(path.join(ROOT, 'web/src/components/ui/ink-orbit-hero.tsx'), 'utf8');
+  const bento = await readFile(path.join(ROOT, 'web/src/components/ui/feature-section-with-bento-grid.tsx'), 'utf8');
   const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
-  assert.ok(!home.includes('Breadcrumb') && !home.includes('StepIndicator'), 'Home keeps minimal navigation');
+  const styles = await readFile(path.join(ROOT, 'web/src/index.css'), 'utf8');
 
-  // Project standards: motion/react under the app MotionConfig, MedAlign tokens.
-  assert.ok(breadcrumb.includes("'motion/react'"), 'uses the project motion library');
-  assert.ok(!breadcrumb.includes('framer-motion'), 'framer-motion is not the project import');
-  assert.ok(!/neutral-\d/.test(breadcrumb), 'no neutral grays; MedAlign tokens only');
+  // The hero is present and wired to the existing state machine.
+  assert.ok(home.includes('<InkOrbitHero'), 'Home renders the adapted hero');
+  assert.ok(home.includes('titleTop="Spot differences between"'));
+  assert.ok(home.includes("your doctor's note") && home.includes('your pharmacy label'));
+  assert.ok(home.includes('primaryCta="Start comparing"') && home.includes('onPrimary={onStart}'));
+  assert.ok(home.includes('secondaryCta="Try the demo case"') && home.includes('onSecondary={onDemo}'));
+  assert.ok(home.includes('Free demo • Synthetic data'), 'the real proof pill stays in Home');
 
-  // Same accessibility contract as the stepper it replaces.
-  assert.ok(breadcrumb.includes('aria-label="Step progress"'));
-  assert.ok(breadcrumb.includes('aria-current'), 'active step is announced');
-  assert.ok(breadcrumb.includes('sr-only') && breadcrumb.includes('of {ORDER.length}'), 'Step N of 4 stays exposed');
+  // Theme adaptation: Lexend only; no foreign fonts or marketing leftovers.
+  assert.ok(hero.includes("'Lexend Variable'"), 'hero uses the app font');
+  for (const banned of ['Manrope', 'Newsreader', 'DemoDialog', 'needs a human', '12,400']) {
+    assert.ok(!hero.includes(banned), `hero must drop: ${banned}`);
+  }
 
-  // The component's signature interactions survive the adaptation.
-  assert.ok(breadcrumb.includes('ChevronRight'), 'chevron separators');
-  assert.ok(breadcrumb.includes('layoutId'), 'shared hover-pill highlight');
-  assert.ok(breadcrumb.includes("type: 'spring'"), 'spring transition preserved');
-  assert.ok(breadcrumb.includes('min-h-11'), 'crumbs keep the 44px hit target');
+  // Sculpture and motion guardrails survive the adaptation.
+  assert.ok(hero.includes('InkOrbitSculpture') && hero.includes('canvas'), '3D sculpture kept');
+  assert.ok(hero.includes('prefers-reduced-motion') && hero.includes('prefers-color-scheme'));
+  assert.match(hero, /\.ih-word\{[^}]*background-clip:text/, 'the visible cycling word owns its gradient text clip');
 
-  // Back-only navigation: completed steps navigate, current/future stay inert.
-  assert.ok(breadcrumb.includes("state === 'done'"), 'navigation gated on completed steps');
-  assert.ok(breadcrumb.includes('onNavigate(s.key)'), 'clicking a completed crumb navigates');
+  // Landing CTAs stay on the shared liquid-glass Button.
+  assert.ok(hero.includes('./button') && hero.includes('<Button'));
+
+  // Anchor nav links to real sections, with motion-safe smooth scrolling.
+  for (const id of ['features', 'how-it-works', 'example-result', 'what-we-compare']) {
+    assert.ok(home.includes(`'#${id}'`), `anchor target missing: ${id}`);
+    assert.ok(home.includes('href={section.href}'), 'nav pills link to the anchor targets');
+    assert.ok(home.includes(`id="${id}"`), `section id missing: ${id}`);
+  }
+  assert.ok(styles.includes('scroll-behavior: smooth'), 'smooth scroll enabled');
+
+  // Bento features: real MedAlign copy, existing Badge, no placeholders.
+  assert.ok(bento.includes("import { Badge } from './badge'"), 'reuses the existing Badge');
+  for (const copy of [
+    'What MedAlign does',
+    'Reads both lists',
+    'You check what we read',
+    'How your data is handled',
+    'Shows differences with evidence',
+  ]) {
+    assert.ok(bento.includes(copy), `bento copy missing: ${copy}`);
+  }
+  assert.ok(!bento.includes('Pay supplier invoices'), 'placeholder copy must be gone');
 });
 
 test('index.html contains the required footer disclaimer', async () => {

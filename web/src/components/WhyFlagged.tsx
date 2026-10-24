@@ -21,6 +21,12 @@ function Value({
       <p className="mt-1 break-words text-[13px] text-foreground">
         {side ? side.display ?? 'Not readable in this source.' : 'Not found in the provided source.'}
       </p>
+      {side?.origin === 'manual' && (
+        <p className="mt-1 text-[12px] text-info">Entered by you; not extracted from a document.</p>
+      )}
+      {side?.origin === 'demo' && (
+        <p className="mt-1 text-[12px] text-muted-foreground">Synthetic demo value.</p>
+      )}
       {side?.normalizedDisplay && (
         <p className="mt-1 break-words text-[12px] text-muted-foreground">
           {normalizedLabel} {side.normalizedDisplay}
@@ -58,7 +64,7 @@ export function WhyFlagged({ result }: { result: Result }) {
         onClick={() => setOpen((value) => !value)}
       >
         Why was this flagged?
-        <ChevronDown aria-hidden="true" className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown aria-hidden="true" className={`size-4 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
       </Button>
       {open && (
         <section id={panelId} aria-label="Comparison explanation" className="mt-3 flex flex-col gap-3">

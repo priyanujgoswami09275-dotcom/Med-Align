@@ -1,5 +1,4 @@
 // src/compare.js — pure normalization + comparison. No DOM, no network, no clock.
-// Spec: PROJECT.md §5 (status decision order), §6 (normalization).
 
 export const STATUS = {
   NO_DIFFERENCES_FOUND: 'NO_DIFFERENCES_FOUND',
@@ -88,45 +87,65 @@ export function normalizeStrength(value, unit) {
   return { mg: num * factor };
 }
 
-// Frequency -> times per day. Food/route timing ("before breakfast") is ignored:
-// only the count per day is compared (PROJECT.md §6).
-const FREQUENCY_ONCE = ['once daily', 'once a day', 'once per day', 'od', 'qd', 'at night', 'hs', 'morning', 'in the morning'];
-const FREQUENCY_TWICE = ['twice daily', 'twice a day', 'bd', 'bid'];
-const FREQUENCY_THREE = ['three times daily', 'three times a day', 'tds', 'tid'];
-const FREQUENCY_FOUR = ['four times daily', 'four times a day', 'qid'];
+// Frequency -> times per day. Food and route timing are deliberately ignored;
+// this parser recognizes counts, not a dosing schedule.
+const FREQUENCY_CONTEXT_WORDS = new Set([
+  'after', 'and', 'at', 'bedtime', 'before', 'breakfast', 'by', 'dinner', 'evening',
+  'food', 'in', 'lunch', 'meal', 'meals', 'midday', 'morning', 'mouth',
+  'noon', 'oral', 'orally', 'the', 'with', 'without',
+]);
+
+function onlyTimingContext(text, match) {
+  const remainder = (text.slice(0, match.index) + ' ' + text.slice(match.index + match[0].length))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return remainder === '' || remainder.split(' ').every((word) => FREQUENCY_CONTEXT_WORDS.has(word));
+}
 
 /**
  * Frequency text -> times per day number, or null when unrecognized.
- * Pattern a-b-c → sum of the digits. Unrecognized -> null (unknown).
+ * A single explicit count or a-b-c schedule is recognized. Multiple claims,
+ * zero schedules, and ambiguous time-of-day phrases remain unknown.
  */
 export function normalizeFrequency(rawFrequency) {
   const text = cleanText(rawFrequency);
   if (text === null) return null;
-  const norm = ' ' + text.toLowerCase().replace(/[^a-z0-9\-\s]/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
-
-  const phraseGroups = [
-    [FREQUENCY_ONCE, 1],
-    [FREQUENCY_TWICE, 2],
-    [FREQUENCY_THREE, 3],
-    [FREQUENCY_FOUR, 4],
-  ];
-  const asTokens = norm.replace(/-/g, ' - ');
-  for (const [phrases, count] of phraseGroups) {
-    for (const phrase of phrases) {
-      const probe = phrase.includes('-') ? phrase.replace(/-/g, ' - ') : phrase;
-      if (asTokens.includes(' ' + probe + ' ')) return count;
+  const norm = text.toLowerCase().replace(/[.,;:()[\]{}]/g, ' ').replace(/\s+/g, ' ').trim();
+  const claims = [];
+  const addMatches = (pattern, countFor) => {
+    for (const match of norm.matchAll(pattern)) {
+      claims.push({ match, count: countFor(match) });
     }
+  };
+  const dayparts = norm.match(/\b(?:morning|afternoon|evening|night|noon|breakfast|lunch|dinner|bedtime)\b/g) || [];
+  if (dayparts.length > 1) return null;
+
+  addMatches(/(?<![\d-])(\d+)\s*-\s*(\d+)\s*-\s*(\d+)(?![\d-])/g, (match) => {
+    const values = match.slice(1).map(Number);
+    const count = values.reduce((sum, value) => sum + value, 0);
+    return values.every(Number.isSafeInteger) && Number.isSafeInteger(count) && count > 0 ? count : null;
+  });
+  addMatches(/\bonce\s+(?:daily|a\s+day|per\s+day)\b/g, () => 1);
+  addMatches(/\btwice\s+(?:daily|a\s+day|per\s+day)\b/g, () => 2);
+  addMatches(/\bthree\s+times\s+(?:daily|a\s+day|per\s+day)\b/g, () => 3);
+  addMatches(/\bfour\s+times\s+(?:daily|a\s+day|per\s+day)\b/g, () => 4);
+  addMatches(/\b(\d+)\s*(?:x|times)\s*(?:(?:a|per)\s+)?(?:day|daily)\b/g, (match) => {
+    const count = Number(match[1]);
+    return Number.isSafeInteger(count) && count > 0 ? count : null;
+  });
+  const abbreviations = { od: 1, qd: 1, hs: 1, bd: 2, bid: 2, tds: 3, tid: 3, qid: 4 };
+  addMatches(/\b(?:od|qd|hs|bd|bid|tds|tid|qid)\b/g, (match) => abbreviations[match[0]]);
+
+  if (claims.length > 1) return null;
+  if (claims.length === 1) {
+    const [{ match, count }] = claims;
+    return count !== null && onlyTimingContext(norm, match) ? count : null;
   }
 
-  const abc = norm.match(/(\d+)\s*-\s*(\d+)\s*-\s*(\d+)/);
-  if (abc) return Number(abc[1]) + Number(abc[2]) + Number(abc[3]);
-
-  const timesPerDay = norm.match(/(\d+)\s*(?:x|times)\s*(?:a\s*)?day/);
-  if (timesPerDay) {
-    const n = Number(timesPerDay[1]);
-    return n > 0 ? n : null;
-  }
-  return null;
+  const timing = [...norm.matchAll(/\b(?:in\s+the\s+morning|morning|at\s+night)\b/g)];
+  if (timing.length !== 1 || !onlyTimingContext(norm, timing[0])) return null;
+  return 1;
 }
 
 /**
@@ -135,7 +154,7 @@ export function normalizeFrequency(rawFrequency) {
  * - key: normalized name; null when the name is null/empty.
  * - doctor / label: the Medicine object on each side, or null.
  * Duplicate keys on one side: the first occurrence is paired; later duplicates
- * are reported as their own one-sided results (architecture.md).
+ * are reported as their own one-sided results.
  */
 export function compare(doctorList, labelList) {
   const dRows = (Array.isArray(doctorList) ? doctorList : []).filter(Boolean);
@@ -149,14 +168,15 @@ export function compare(doctorList, labelList) {
     const dKey = normalizeName(med && med.name);
 
     if (dKey === null) {
-      // A null name yields CANT_TELL on its own card (PROJECT.md §5).
+      // A null name cannot establish identity or a source gap.
+      const fields = oneSidedFields(med, 'doctor', false);
       results.push({
         key: null,
         displayName: cleanText(med && med.name) ?? 'Unnamed medicine',
         status: STATUS.CANT_TELL,
         differing: [],
-        unknown: ['name'],
-        fields: oneSidedFields(med, 'doctor', true),
+        unknown: fields.filter((field) => field.unresolved).map((field) => field.field),
+        fields,
         doctor: med,
         label: null,
       });
@@ -168,13 +188,15 @@ export function compare(doctorList, labelList) {
       if (!pairedLabel.has(j) && lKeys[j] === dKey) { lIdx = j; break; }
     }
     if (lIdx === -1) {
+      const identityReliable = fieldIsTrusted(med, 'name');
+      const fields = oneSidedFields(med, 'doctor', identityReliable);
       results.push({
         key: dKey,
         displayName: cleanText(med && med.name) ?? 'Unnamed medicine',
-        status: STATUS.MISSING_FROM_LABEL,
+        status: identityReliable ? STATUS.MISSING_FROM_LABEL : STATUS.CANT_TELL,
         differing: [],
-        unknown: [],
-        fields: oneSidedFields(med, 'doctor'),
+        unknown: fields.filter((field) => field.unresolved).map((field) => field.field),
+        fields,
         doctor: med,
         label: null,
       });
@@ -188,13 +210,15 @@ export function compare(doctorList, labelList) {
   // not be read cannot be placed on a list at all, so it is CANT_TELL.
   lRows.forEach((med, j) => {
     if (pairedLabel.has(j)) return;
+    const identityReliable = fieldIsTrusted(med, 'name');
+    const fields = oneSidedFields(med, 'label', identityReliable);
     results.push({
       key: lKeys[j],
       displayName: cleanText(med && med.name) ?? 'Unnamed medicine',
-      status: lKeys[j] === null ? STATUS.CANT_TELL : STATUS.NOT_ON_DOCTOR_LIST,
+      status: lKeys[j] === null || !identityReliable ? STATUS.CANT_TELL : STATUS.NOT_ON_DOCTOR_LIST,
       differing: [],
-      unknown: lKeys[j] === null ? ['name'] : [],
-      fields: oneSidedFields(med, 'label', lKeys[j] === null),
+      unknown: fields.filter((field) => field.unresolved).map((field) => field.field),
+      fields,
       doctor: null,
       label: med,
     });
@@ -213,33 +237,20 @@ export function compare(doctorList, labelList) {
 }
 
 function pairResult(key, med, lMed) {
-  // Extraction `uncertain` is a row-level flag: the whole row was not read
-  // reliably, so no field of it can count as known. User edits clear the flag.
-  const dRowU = med.uncertain === true;
-  const lRowU = lMed.uncertain === true;
-
   const dStrength = normalizeStrength(med.strength_value, med.strength_unit).mg;
   const lStrength = normalizeStrength(lMed.strength_value, lMed.strength_unit).mg;
   const dFreq = normalizeFrequency(med.frequency_text);
   const lFreq = normalizeFrequency(lMed.frequency_text);
-
-  const differing = [];
-  const unknown = [];
-
-  if (!dRowU && !lRowU && dStrength !== null && lStrength !== null) {
-    if (dStrength !== lStrength) differing.push('strength');
-  } else {
-    unknown.push('strength');
-  }
-
-  if (!dRowU && !lRowU && dFreq !== null && lFreq !== null) {
-    if (dFreq !== lFreq) differing.push('frequency');
-  } else {
-    unknown.push('frequency');
-  }
-
-  if (dRowU || lRowU) unknown.push('name');
-
+  const identityTrusted = fieldIsTrusted(med, 'name') && fieldIsTrusted(lMed, 'name');
+  const fields = [
+    fieldDetail('name', normalizeName(med.name), normalizeName(lMed.name), identityTrusted),
+    fieldDetail('strength', dStrength, lStrength,
+      identityTrusted && fieldIsTrusted(med, 'strength') && fieldIsTrusted(lMed, 'strength')),
+    fieldDetail('frequency', dFreq, lFreq,
+      identityTrusted && fieldIsTrusted(med, 'frequency') && fieldIsTrusted(lMed, 'frequency')),
+  ];
+  const differing = fields.filter((field) => field.outcome === 'different').map((field) => field.field);
+  const unknown = fields.filter((field) => field.unresolved).map((field) => field.field);
   let status;
   if (differing.length > 0) status = STATUS.NEEDS_CHECKING;
   else if (unknown.length > 0) status = STATUS.CANT_TELL;
@@ -250,12 +261,8 @@ function pairResult(key, med, lMed) {
     displayName: cleanText(med && med.name) || cleanText(lMed && lMed.name) || 'Unnamed medicine',
     status,
     differing,
-    unknown: [...new Set(unknown)],
-    fields: [
-      fieldDetail('name', normalizeName(med.name), normalizeName(lMed.name), !dRowU && !lRowU),
-      fieldDetail('strength', dStrength, lStrength, !dRowU && !lRowU),
-      fieldDetail('frequency', dFreq, lFreq, !dRowU && !lRowU),
-    ],
+    unknown,
+    fields,
     doctor: med,
     label: lMed,
   };
@@ -278,11 +285,14 @@ function fieldDetail(field, doctorValue, labelValue, rowsConfirmed) {
   };
 }
 
-// A one-sided medicine is a source-coverage gap, not a paired comparison.
-// Its present-side field is unresolved only when its own value is missing,
-// unnormalizable, or the extraction row remains uncertain.
-function oneSidedFields(medicine, presentSide, unresolvedName = false) {
-  const rowUncertain = medicine?.uncertain === true;
+function fieldIsTrusted(medicine, field) {
+  return medicine?.uncertain !== true
+    || (Array.isArray(medicine?.confirmedFields) && medicine.confirmedFields.includes(field));
+}
+
+// A one-sided row is a definite source gap only when its medicine identity is
+// readable and reviewed; otherwise the result is unresolved, not a gap.
+function oneSidedFields(medicine, presentSide, identityReliable) {
   const normalized = {
     name: normalizeName(medicine?.name),
     strength: normalizeStrength(medicine?.strength_value, medicine?.strength_unit).mg,
@@ -301,7 +311,8 @@ function oneSidedFields(medicine, presentSide, unresolvedName = false) {
     doctor: presentSide === 'doctor' ? { normalized: normalized[field] } : null,
     label: presentSide === 'label' ? { normalized: normalized[field] } : null,
     outcome: 'not_compared',
-    unresolved: unresolvedName && field === 'name' || rowUncertain || !rawAvailable[field],
+    unresolved: !rawAvailable[field] || !fieldIsTrusted(medicine, field)
+      || (field === 'name' && !identityReliable),
   }));
 }
 
@@ -318,19 +329,30 @@ export function pharmacistQuestion(results) {
   const list = Array.isArray(results) ? results : [];
   const attention = list.filter((r) => r && typeof r === 'object' && r.status !== STATUS.NO_DIFFERENCES_FOUND);
   const lines = attention.map((r) => {
+    const unknown = Array.isArray(r.unknown) ? r.unknown : [];
+    const unknownText = unknown.map((field) => FIELD_LABELS[field] ?? field).join(' and ');
     if (r.status === STATUS.NEEDS_CHECKING) {
-      const what = r.differing.length > 0
-        ? r.differing.map((f) => FIELD_LABELS[f] ?? f).join(' and ')
-        : r.unknown.map((f) => FIELD_LABELS[f] ?? f).join(' and ');
-      return '- ' + (r.displayName ?? 'Unnamed medicine') + ': the two lists read differently on ' + what + '';
+      const differing = r.differing.map((field) => FIELD_LABELS[field] ?? field).join(' and ');
+      const difference = differing
+        ? 'the two lists read differently on ' + differing
+        : 'the compared values need review';
+      const unresolved = unknownText
+        ? '; ' + unknownText + ' could not be compared reliably'
+        : '';
+      return '- ' + (r.displayName ?? 'Unnamed medicine') + ': ' + difference + unresolved;
     }
     if (r.status === STATUS.MISSING_FROM_LABEL) {
-      return '- ' + (r.displayName ?? 'Unnamed medicine') + ": on the doctor's list, not on the pharmacy label";
+      const unresolved = unknownText ? '; ' + unknownText + ' still need review' : '';
+      return '- ' + (r.displayName ?? 'Unnamed medicine') + ": on the doctor's list, not on the pharmacy label" + unresolved;
     }
     if (r.status === STATUS.NOT_ON_DOCTOR_LIST) {
-      return '- ' + (r.displayName ?? 'Unnamed medicine') + ": on the pharmacy label, not on the doctor's list";
+      const unresolved = unknownText ? '; ' + unknownText + ' still need review' : '';
+      return '- ' + (r.displayName ?? 'Unnamed medicine') + ": on the pharmacy label, not on the doctor's list" + unresolved;
     }
-    return '- ' + (r.displayName ?? 'Unnamed medicine') + ': part of the wording could not be read, please take a look';
+    const unresolved = unknownText
+      ? unknownText + ' could not be compared reliably; please review both lists'
+      : 'part of the wording could not be read, please take a look';
+    return '- ' + (r.displayName ?? 'Unnamed medicine') + ': ' + unresolved;
   });
   const listBlock = lines.length > 0 ? lines.join('\n') + '\n\n' : '';
   return 'Hello pharmacist. I compared what my doctor said with what my pharmacy label shows, using a demo tool. Please check these medicines together:\n' + listBlock + 'I have both lists with me. Which wording am I meant to follow?';

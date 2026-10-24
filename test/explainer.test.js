@@ -62,6 +62,49 @@ test('CANT_TELL lists unresolved fields and their source-side reason', () => {
   assert.match(explanation.intro, /could not be compared reliably/);
 });
 
+test('a source-gap explanation does not hide unknown source fields', () => {
+  const [result] = compare(
+    [{
+      name: 'Atorvastatin',
+      strength_value: 10,
+      strength_unit: 'mg',
+      frequency_text: null,
+      uncertain: false,
+    }],
+    [],
+  );
+  const explanation = buildExplanation(result);
+  assert.equal(explanation.status, 'MISSING_FROM_LABEL');
+  assert.match(explanation.intro, /not found in the provided pharmacy source/);
+  assert.match(explanation.intro, /frequency also needs review/);
+  assert.equal(explanation.rows.find((row) => row.field === 'frequency').unresolved, true);
+});
+
+test('confirmed fields are explained as compared while remaining uncertainty stays visible', () => {
+  const [result] = compare(
+    [{
+      name: 'Metformin',
+      strength_value: 500,
+      strength_unit: 'mg',
+      frequency_text: 'once daily',
+      uncertain: true,
+      confirmedFields: ['name', 'frequency'],
+    }],
+    [{
+      name: 'Metformin',
+      strength_value: 850,
+      strength_unit: 'mg',
+      frequency_text: 'once daily',
+      uncertain: false,
+    }],
+  );
+  const explanation = buildExplanation(result);
+  assert.equal(explanation.status, 'CANT_TELL');
+  assert.match(explanation.intro, /strength field needs review/);
+  assert.equal(explanation.rows.find((row) => row.field === 'frequency').outcome, 'match');
+  assert.equal(explanation.rows.find((row) => row.field === 'strength').normalizedLabel, 'Normalized value (not compared):');
+});
+
 test('missing evidence stays absent and user edits are distinct from extracted values', () => {
   const result = compare(
     [{ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'twice daily', evidence: '', uncertain: false,
@@ -75,6 +118,17 @@ test('missing evidence stays absent and user edits are distinct from extracted v
   assert.equal(strength.doctor.edited, true);
   assert.equal(strength.doctor.originalDisplay, '250 mg');
   assert.equal(strength.label.edited, false);
+});
+
+test('manual rows stay labeled as user-entered rather than extracted', () => {
+  const result = compare(
+    [{ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'twice daily', evidence: '', uncertain: false, origin: 'manual' }],
+    [{ name: 'Metformin', strength_value: 850, strength_unit: 'mg', frequency_text: 'once daily', evidence: '', uncertain: false, origin: 'manual' }],
+  )[0];
+  const explanation = buildExplanation(result);
+  const doctorName = explanation.rows.find((row) => row.field === 'name').doctor;
+  assert.equal(doctorName.origin, 'manual');
+  assert.equal(doctorName.originalDisplay, null);
 });
 
 test('normalizable values blocked by uncertainty are not labeled as compared', () => {

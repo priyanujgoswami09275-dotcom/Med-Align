@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import type { Dispatch } from 'react';
 import { ChevronDown, CircleHelp, TriangleAlert } from 'lucide-react';
 
+import { LiveRegion } from '@/components/LiveRegion';
 import { Button } from '@/components/ui/button';
 import { FIELD_TEXTS, KIND_LABEL } from '@/lib/present';
 import { fieldIsReadable, resolverItems } from '@/lib/uncertainty';
@@ -33,8 +34,13 @@ export function ResolverQueue({
     resolverItems(sourceKey, sources[sourceKey].medicines),
   );
 
-  function focusField(sourceKey: SourceKey, rowId: string | null, field: FieldName) {
+  function focusField(item: (typeof items)[number]) {
+    const { sourceKey, rowId, field, reason } = item;
     if (!rowId) return;
+    if (reason === 'unreadable_unit') {
+      document.getElementById(inputId(sourceKey, rowId, 'strength') + '-unit')?.focus();
+      return;
+    }
     document.getElementById(inputId(sourceKey, rowId, field))?.focus();
   }
 
@@ -45,7 +51,7 @@ export function ResolverQueue({
   }
 
   return (
-    <section aria-labelledby="resolver-title" className="rounded-xl border border-warning/40 bg-warning/5 p-3 sm:p-4">
+    <section id="resolver" tabIndex={-1} aria-labelledby="resolver-title" className="rounded-xl border border-warning/40 bg-warning/5 p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="resolver-title" className="flex items-center gap-2 text-base font-semibold text-foreground">
           <TriangleAlert aria-hidden="true" className="size-4 text-warning" />
@@ -99,7 +105,7 @@ export function ResolverQueue({
                     type="button"
                     variant="outline"
                     className="min-h-11 px-3 text-[12px]"
-                    onClick={() => focusField(item.sourceKey, item.rowId, item.field)}
+                    onClick={() => focusField(item)}
                   >
                     Edit this field
                   </Button>
@@ -127,7 +133,9 @@ export function ResolverQueue({
           })}
         </ul>
       )}
-      <p aria-live="polite" className="sr-only">{announcement}</p>
+      <LiveRegion role="status">
+        {items.length} fields waiting for review. {announcement}
+      </LiveRegion>
     </section>
   );
 }

@@ -85,6 +85,29 @@ test('food/route timing is ignored when a count is also present', () => {
   assert.equal(normalizeFrequency('1-0-0 morning'), 1);
 });
 
+test('ambiguous time-of-day and combined frequency phrases stay unknown', () => {
+  for (const text of [
+    'morning and night',
+    'morning and evening',
+    'once daily morning and night',
+    'twice daily morning and evening',
+    '1-0-1 morning and night',
+    'once daily and twice daily',
+    'twice daily or three times a day',
+    '1-0-1 and 1-0-0',
+    'every other day',
+    'once daily as needed',
+  ]) {
+    assert.equal(normalizeFrequency(text), null, `ambiguous frequency: ${text}`);
+  }
+});
+
+test('zero and malformed administration schedules stay unknown', () => {
+  for (const text of ['0-0-0', '0x a day', '1-0', '1-0-1-0', '1--1']) {
+    assert.equal(normalizeFrequency(text), null, `invalid schedule: ${text}`);
+  }
+});
+
 test('strength unit conversion to mg', () => {
   assert.equal(normalizeStrength(0.5, 'g').mg, 500);
   assert.equal(normalizeStrength(2, 'gm').mg, 2000);
@@ -125,6 +148,28 @@ test('unrecognized frequency on one side -> CANT_TELL', () => {
   assert.equal(results[0].status, STATUS.CANT_TELL);
 });
 
+test('unsupported strength units remain unknown instead of matching by number', () => {
+  const [result] = compare(
+    [med({ name: 'Metformin', strength_value: 500, strength_unit: 'ml', frequency_text: 'twice daily' })],
+    [med({ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'twice daily' })],
+  );
+  assert.equal(result.status, STATUS.CANT_TELL);
+  assert.deepEqual(result.unknown, ['strength']);
+  assert.equal(result.fields.find((field) => field.field === 'strength').outcome, 'not_compared');
+});
+
+test('multiple times of day cannot become a false frequency match', () => {
+  const [result] = compare(
+    [med({ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'morning and night' })],
+    [med({ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'once daily' })],
+  );
+  assert.equal(result.status, STATUS.CANT_TELL);
+  assert.deepEqual(result.differing, []);
+  assert.deepEqual(result.unknown, ['frequency']);
+  assert.equal(result.fields.find((field) => field.field === 'frequency').outcome, 'not_compared');
+  assert.match(pharmacistQuestion([result]), /how often to take it/i);
+});
+
 test('row-level uncertain flag on either side -> CANT_TELL (never decides)', () => {
   const results = compare(
     [med({ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'twice daily', uncertain: true })],
@@ -153,6 +198,38 @@ test('one-sided names: doctor-only -> MISSING_FROM_LABEL', () => {
   assert.equal(results.find((r) => r.displayName === 'Metformin').status, STATUS.NOT_ON_DOCTOR_LIST);
 });
 
+test('one-sided uncertain identity is not reported as a definite source gap', () => {
+  const [result] = compare(
+    [med({ name: 'Atorvastatin', uncertain: true })],
+    [],
+  );
+  assert.equal(result.status, STATUS.CANT_TELL);
+  assert.deepEqual(result.unknown, ['name', 'strength', 'frequency']);
+  assert.equal(result.fields[0].unresolved, true);
+  assert.match(pharmacistQuestion([result]), /medicine name/i);
+});
+
+test('confirmed one-sided identity keeps the source gap and reports its unknown fields', () => {
+  const [result] = compare(
+    [med({ name: 'Atorvastatin', uncertain: true, confirmedFields: ['name'] })],
+    [],
+  );
+  assert.equal(result.status, STATUS.MISSING_FROM_LABEL);
+  assert.deepEqual(result.unknown, ['strength', 'frequency']);
+  assert.deepEqual(result.fields.map((field) => field.unresolved), [false, true, true]);
+  assert.match(pharmacistQuestion([result]), /not on the pharmacy label/i);
+  assert.match(pharmacistQuestion([result]), /dose strength/i);
+});
+
+test('one-sided known identity with a missing field reports both gap and unknown value', () => {
+  const [result] = compare(
+    [med({ name: 'Atorvastatin', strength_value: 10, strength_unit: 'mg', frequency_text: null })],
+    [],
+  );
+  assert.equal(result.status, STATUS.MISSING_FROM_LABEL);
+  assert.deepEqual(result.unknown, ['frequency']);
+});
+
 test('null-name rows yield CANT_TELL on their own card and never pair', () => {
   const results = compare(
     [med({ name: null, strength_value: 5, strength_unit: 'mg', frequency_text: 'once daily' })],
@@ -161,6 +238,7 @@ test('null-name rows yield CANT_TELL on their own card and never pair', () => {
   assert.equal(results.length, 2);
   for (const r of results) {
     assert.equal(r.status, STATUS.CANT_TELL);
+    assert.ok(r.unknown.includes('name'));
   }
 });
 
@@ -244,6 +322,21 @@ test('field details expose the normalized values and outcomes used for paired de
     assert.deepEqual(matched.fields.map((field) => field.outcome), ['match', 'match', 'match']);
     assert.ok(matched.fields.every((field) => !field.unresolved));
   }
+});
+
+test('known differences survive alongside unknown fields', () => {
+  const [result] = compare(
+    [med({ name: 'Metformin', strength_value: 500, strength_unit: 'mg', frequency_text: 'twice daily' })],
+    [med({ name: 'Metformin', strength_value: 850, strength_unit: 'mg', frequency_text: 'morning and night' })],
+  );
+  assert.equal(result.status, STATUS.NEEDS_CHECKING);
+  assert.deepEqual(result.differing, ['strength']);
+  assert.deepEqual(result.unknown, ['frequency']);
+  assert.deepEqual(result.fields.map((field) => [field.outcome, field.unresolved]), [
+    ['match', false],
+    ['different', false],
+    ['not_compared', true],
+  ]);
 });
 
 test('one-sided field details distinguish a source gap from unresolved extraction', () => {

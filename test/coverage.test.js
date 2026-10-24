@@ -22,6 +22,7 @@ test('demo coverage counts records, pairs, compared fields, source-only fields a
     doctorRecords: 4,
     labelRecords: 4,
     pairsCompared: 3,
+    fieldsAvailable: 15,
     fieldsCompared: 9,
     fieldsMatched: 7,
     fieldsDifferent: 2,
@@ -37,6 +38,7 @@ test('empty input produces zero counts', () => {
     doctorRecords: 0,
     labelRecords: 0,
     pairsCompared: 0,
+    fieldsAvailable: 0,
     fieldsCompared: 0,
     fieldsMatched: 0,
     fieldsDifferent: 0,
@@ -53,6 +55,7 @@ test('null paired strength is unresolved and not counted as compared', () => {
   const results = compare(doctor, label);
   const coverage = computeCoverage(doctor, label, results);
   assert.equal(coverage.pairsCompared, 1);
+  assert.equal(coverage.fieldsAvailable, 3);
   assert.equal(coverage.fieldsCompared, 2);
   assert.equal(coverage.fieldsUnresolved, 1);
 });
@@ -61,8 +64,56 @@ test('uncertain paired row contributes no successfully compared fields', () => {
   const doctor = [medicine({ uncertain: true })];
   const label = [medicine()];
   const coverage = computeCoverage(doctor, label, compare(doctor, label));
+  assert.equal(coverage.pairsCompared, 0);
   assert.equal(coverage.fieldsCompared, 0);
   assert.equal(coverage.fieldsUnresolved, 3);
+});
+
+test('available field values are counted separately from fields actually compared', () => {
+  const doctor = [medicine({ uncertain: true, strength_unit: 'oz', confirmedFields: ['name'] })];
+  const label = [medicine()];
+  const results = compare(doctor, label);
+  const coverage = computeCoverage(doctor, label, results);
+
+  // Values are present in all three fields, but name is the only one explicitly
+  // reviewed and compared. The other two still count as available, not absent.
+  assert.equal(coverage.fieldsAvailable, 3);
+  assert.equal(coverage.fieldsCompared, 1);
+  assert.equal(coverage.fieldsUnresolved, 2);
+});
+
+test('coverage counts only reviewed identity pairs and keeps one-sided uncertainty visible', () => {
+  const uncertainDoctor = [medicine({
+    name: 'Atorvastatin',
+    uncertain: true,
+  })];
+  const unreviewed = compare(uncertainDoctor, []);
+  assert.equal(unreviewed[0].status, 'CANT_TELL');
+  assert.deepEqual(computeCoverage(uncertainDoctor, [], unreviewed), {
+    doctorRecords: 1,
+    labelRecords: 0,
+    pairsCompared: 0,
+    fieldsAvailable: 3,
+    fieldsCompared: 0,
+    fieldsMatched: 0,
+    fieldsDifferent: 0,
+    fieldsUnresolved: 3,
+    doctorOnly: 0,
+    labelOnly: 0,
+    oneSidedFields: 0,
+  });
+
+  const reviewedDoctor = [medicine({
+    name: 'Atorvastatin',
+    uncertain: true,
+    confirmedFields: ['name'],
+  })];
+  const reviewed = compare(reviewedDoctor, []);
+  assert.equal(reviewed[0].status, 'MISSING_FROM_LABEL');
+  const coverage = computeCoverage(reviewedDoctor, [], reviewed);
+  assert.equal(coverage.doctorOnly, 1);
+  assert.equal(coverage.fieldsUnresolved, 2);
+  assert.equal(coverage.oneSidedFields, 1);
 });
 
 test('one-sided missing field is unresolved while readable fields remain source-only', () => {

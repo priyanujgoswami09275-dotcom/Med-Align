@@ -60,7 +60,6 @@ function ReviewPanel({
               sourceKey={sourceKey}
               row={row}
               index={index}
-              fromImage={source.fromImage}
               onPatch={(patch) => {
                 if (!row.rowId) return;
                 dispatch({ type: 'patchMedicine', key: sourceKey, rowId: row.rowId, patch });

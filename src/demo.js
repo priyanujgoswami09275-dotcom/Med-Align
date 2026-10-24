@@ -14,7 +14,7 @@ export const DEMO_LABEL_TEXT =
   'Pan 40 (pantoprazole 40 mg) once daily\n' +
   'Aspirin 75 mg once daily';
 
-// Same shape as the extraction output (PROJECT.md §4). `evidence` values are
+// Same shape as the extraction output. `evidence` values are
 // exact quotes from the texts above; the server-side substring check passes.
 export const DEMO_DOCTOR_MEDICINES = [
   {
@@ -86,7 +86,7 @@ export const DEMO_LABEL_MEDICINES = [
   },
 ];
 
-// Exact statuses from PROJECT.md §7 — used as the test oracle.
+// Exact expected statuses for this synthetic demo — used as the test oracle.
 export const DEMO_EXPECTED = [
   { name: 'Metformin', status: 'NEEDS_CHECKING', differing: ['strength', 'frequency'] },
   { name: 'Amlodipine', status: 'NO_DIFFERENCES_FOUND' },

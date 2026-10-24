@@ -1,5 +1,5 @@
-// src/schema.js — the extraction contract (PROJECT.md §4): the response schema
-// sent to Gemini, the system instruction, and server-side output validation.
+// src/schema.js — the Gemini extraction contract, system instruction, and
+// server-side output validation.
 // Model output is untrusted input: unknown keys are stripped, bad types become
 // null + uncertain, never guessed.
 
@@ -14,10 +14,11 @@ export const MEDICINE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Medicine name, or null if not readable' },
-          strength_value: { type: 'number', description: 'Numeric dose per unit, e.g. 500. null if not readable' },
-          strength_unit: { type: 'string', description: 'One of: mg, mcg, ug, g, ml. null if not readable' },
-          frequency_text: { type: 'string', description: 'Dosing words exactly as written, e.g. "twice daily" or "1-0-1". null if not readable' },
+          // responseJsonSchema uses JSON Schema type unions for nullable values.
+          name: { type: ['string', 'null'], description: 'Medicine name, or null if not readable' },
+          strength_value: { type: ['number', 'null'], description: 'Numeric dose per unit, e.g. 500. null if not readable' },
+          strength_unit: { type: ['string', 'null'], description: 'One of: mg, mcg, ug, g, ml. null if not readable' },
+          frequency_text: { type: ['string', 'null'], description: 'Dosing words exactly as written, e.g. "twice daily" or "1-0-1". null if not readable' },
           evidence: { type: 'string', description: 'Exact quote copied from the document for this medicine, or "" if none' },
           uncertain: { type: 'boolean', description: 'true when any part of this medicine could not be read reliably' },
         },
@@ -40,8 +41,8 @@ export const SYSTEM_INSTRUCTION =
 function untrustedString(value, limit) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  if (trimmed === '') return null;
-  return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
+  if (trimmed === '' || trimmed.length > limit) return null;
+  return trimmed;
 }
 
 function untrustedNumber(value) {
@@ -51,7 +52,7 @@ function untrustedNumber(value) {
 }
 
 function untrustedBool(value) {
-  return value === true;
+  return value !== false;
 }
 
 /**
@@ -79,14 +80,19 @@ export function cleanMedicine(raw) {
 }
 
 /**
- * Validate the model's full output. Accepts an array or { medicines: [...] }.
- * Returns null when the value cannot be an array of medicines at all.
+ * Validate the model's full output. Requires { medicines: [...] }.
+ * Returns null when the wrapper or any medicine row has an unsupported shape.
  */
 export function cleanMedicineArray(raw) {
-  if (raw === null || typeof raw !== 'object') return null;
-  const array = Array.isArray(raw) ? raw : raw.medicines;
-  if (!Array.isArray(array)) return null;
-  return array.map(cleanMedicine).filter(Boolean);
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)
+    || !Array.isArray(raw.medicines)) return null;
+  const medicines = [];
+  for (const item of raw.medicines) {
+    const medicine = cleanMedicine(item);
+    if (medicine === null) return null;
+    medicines.push(medicine);
+  }
+  return medicines;
 }
 
 /**

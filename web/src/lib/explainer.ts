@@ -3,6 +3,7 @@ import { buildExplanation as buildExplanationJs } from '@shared/explainer.js';
 import type { FieldName, Result, Status } from './types';
 
 export type ExplainedSide = {
+  origin: 'manual' | 'extracted' | 'demo';
   display: string | null;
   normalizedDisplay: string | null;
   evidence: string | null;

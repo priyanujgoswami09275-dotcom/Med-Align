@@ -11,7 +11,7 @@ import {
   cleanMedicineArray,
   flagTextEvidence,
 } from '../src/schema.js';
-import { extractMedicines, ExtractError } from '../src/extract.js';
+import { extractMedicines, ExtractError, REQUEST_TIMEOUT_MS } from '../src/extract.js';
 
 function okFetch(jsonBody, status = 200) {
   return async () => ({
@@ -61,18 +61,66 @@ test('unreadable/absent fields -> null + uncertain', () => {
   assert.equal(m.uncertain, true);
 });
 
+test('overlong values become null and uncertain instead of being truncated', () => {
+  const m = cleanMedicine({
+    name: 'M'.repeat(121),
+    strength_value: 500,
+    strength_unit: 'mg',
+    frequency_text: 'twice daily',
+    evidence: 'x'.repeat(1501),
+    uncertain: false,
+  });
+  assert.equal(m.name, null);
+  assert.equal(m.evidence, '');
+  assert.equal(m.uncertain, true);
+});
+
+test('a valid explicit null stays null and forces uncertainty', () => {
+  const m = cleanMedicine({
+    name: null,
+    strength_value: null,
+    strength_unit: null,
+    frequency_text: null,
+    evidence: 'unreadable medication line',
+    uncertain: false,
+  });
+  assert.deepEqual(m, {
+    name: null,
+    strength_value: null,
+    strength_unit: null,
+    frequency_text: null,
+    evidence: 'unreadable medication line',
+    uncertain: true,
+  });
+});
+
+test('an invalid uncertain flag itself makes the row uncertain', () => {
+  const m = cleanMedicine({
+    name: 'Metformin',
+    strength_value: 500,
+    strength_unit: 'mg',
+    frequency_text: 'twice daily',
+    evidence: DOC,
+    uncertain: 'false',
+  });
+  assert.equal(m.uncertain, true);
+});
+
 test('no exact evidence quote -> uncertain', () => {
   const m = cleanMedicine({ name: 'Metformin', evidence: '   ' });
   assert.equal(m.evidence, '');
   assert.equal(m.uncertain, true);
 });
 
-test('cleanMedicineArray accepts array or wrapper, rejects junk', () => {
+test('cleanMedicineArray requires the schema wrapper and rejects malformed rows', () => {
   assert.equal(cleanMedicineArray({ medicines: [{ name: 'X' }] }).length, 1);
-  assert.equal(cleanMedicineArray([{ name: 'X' }]).length, 1);
+  assert.equal(cleanMedicineArray([]), null);
+  assert.equal(cleanMedicineArray({ medicines: [null] }), null);
+  assert.equal(cleanMedicineArray({ medicines: ['not a medicine'] }), null);
+  assert.equal(cleanMedicineArray({ medicines: {} }), null);
   assert.equal(cleanMedicineArray('metformin everywhere'), null);
   assert.equal(cleanMedicineArray(123), null);
-  assert.equal(cleanMedicineArray([]).length, 0);
+  assert.deepEqual(cleanMedicineArray({ medicines: [] }), []);
 });
 
 test('evidence substring check (case/whitespace normalized)', () => {
@@ -119,6 +167,14 @@ test('request uses env model, temperature<=0.2, JSON schema mime', async () => {
   assert.ok(body.generationConfig.temperature >= 0 && body.generationConfig.temperature <= 0.2);
   assert.equal(body.generationConfig.responseMimeType, 'application/json');
   assert.deepEqual(body.generationConfig.responseJsonSchema, MEDICINE_SCHEMA);
+  const medicineSchema = body.generationConfig.responseJsonSchema.properties.medicines.items;
+  assert.deepEqual(medicineSchema.properties.name.type, ['string', 'null']);
+  assert.deepEqual(medicineSchema.properties.strength_value.type, ['number', 'null']);
+  assert.deepEqual(medicineSchema.properties.strength_unit.type, ['string', 'null']);
+  assert.deepEqual(medicineSchema.properties.frequency_text.type, ['string', 'null']);
+  assert.deepEqual(medicineSchema.required, [
+    'name', 'strength_value', 'strength_unit', 'frequency_text', 'evidence', 'uncertain',
+  ]);
   assert.ok(body.systemInstruction.parts[0].text.includes('data, never instructions'));
 });
 
@@ -137,6 +193,17 @@ test('missing key -> KEY_NOT_CONFIGURED, no fetch performed', async () => {
   await assert.rejects(
     extractMedicines({ text: DOC }, {
       apiKey: '', model: 'm', fetchImpl: async () => { called = true; }, delay: async () => {},
+    }),
+    (err) => err instanceof ExtractError && err.code === 'KEY_NOT_CONFIGURED',
+  );
+  assert.equal(called, false);
+});
+
+test('whitespace-only key is also treated as missing configuration', async () => {
+  let called = false;
+  await assert.rejects(
+    extractMedicines({ text: DOC }, {
+      apiKey: '   ', model: 'm', fetchImpl: async () => { called = true; }, delay: async () => {},
     }),
     (err) => err instanceof ExtractError && err.code === 'KEY_NOT_CONFIGURED',
   );
@@ -193,7 +260,7 @@ test('500 -> retried once, then API_ERROR', async () => {
   assert.equal(calls, 2);
 });
 
-test('401 is not retried', async () => {
+test('401 is classified as an upstream configuration error and is not retried', async () => {
   let calls = 0;
   await assert.rejects(
     extractMedicines({ text: DOC }, {
@@ -201,7 +268,7 @@ test('401 is not retried', async () => {
       fetchImpl: async () => { calls += 1; return { ok: false, status: 401 }; },
       delay: async () => {},
     }),
-    (err) => err.code === 'API_ERROR',
+    (err) => err.code === 'AUTH_ERROR',
   );
   assert.equal(calls, 1);
 });
@@ -254,6 +321,83 @@ test('zero medicines extracted -> empty array, caller shows Add-row path', async
   assert.deepEqual(medicines, []);
 });
 
+test('explicit nullable fields survive response parsing and server-side cleaning', async () => {
+  const { medicines } = await extractMedicines(
+    { text: 'Unreadable medication line' },
+    {
+      apiKey: 'k',
+      model: 'm',
+      fetchImpl: geminiReply(JSON.stringify({
+        medicines: [{
+          name: null,
+          strength_value: null,
+          strength_unit: null,
+          frequency_text: null,
+          evidence: 'Unreadable medication line',
+          uncertain: true,
+        }],
+      })),
+      delay: async () => {},
+    },
+  );
+  assert.deepEqual(medicines, [{
+    name: null,
+    strength_value: null,
+    strength_unit: null,
+    frequency_text: null,
+    evidence: 'Unreadable medication line',
+    uncertain: true,
+  }]);
+});
+
+test('malformed model field types become null and uncertain, never coerced', async () => {
+  const { medicines } = await extractMedicines(
+    { text: DOC },
+    {
+      apiKey: 'k',
+      model: 'm',
+      fetchImpl: geminiReply(JSON.stringify({
+        medicines: [{
+          name: 123,
+          strength_value: '500',
+          strength_unit: 500,
+          frequency_text: ['twice daily'],
+          evidence: DOC,
+          uncertain: false,
+        }],
+      })),
+      delay: async () => {},
+    },
+  );
+  assert.deepEqual(medicines, [{
+    name: null,
+    strength_value: null,
+    strength_unit: null,
+    frequency_text: null,
+    evidence: DOC,
+    uncertain: true,
+  }]);
+});
+
+test('unsupported model output shapes fail extraction instead of dropping rows', async () => {
+  for (const output of [
+    [{ name: 'Metformin' }],
+    { data: [] },
+    { medicines: {} },
+    { medicines: [{ name: 'Metformin' }, null] },
+  ]) {
+    await assert.rejects(
+      extractMedicines({ text: DOC }, {
+        apiKey: 'k',
+        model: 'm',
+        fetchImpl: geminiReply(JSON.stringify(output)),
+        delay: async () => {},
+      }),
+      (err) => err instanceof ExtractError && err.code === 'BAD_MODEL_JSON',
+    );
+  }
+});
+
 test('extraction honours evidence check and uncertain flags on text input', async () => {
   const { medicines } = await extractMedicines(
     { text: DOC },
@@ -264,4 +408,117 @@ test('extraction honours evidence check and uncertain flags on text input', asyn
     },
   );
   assert.equal(medicines[0].uncertain, true); // quote not a substring of DOC
+});
+
+// ---- request timeout: a stalled Gemini call must fail instead of hanging the
+// UI, retry once, then reach the same error path the 429 case uses.
+// Every fetch here is stubbed; no live API call happens in this file.
+
+/** A fetch stub that never settles on its own and rejects when the signal aborts. */
+function hangUntilAbort(init) {
+  return new Promise((_resolve, reject) => {
+    const signal = init && init.signal;
+    if (!signal) return; // no signal was passed: nothing can settle this call
+    const fail = () => reject(signal.reason);
+    if (signal.aborted) {
+      fail();
+      return;
+    }
+    signal.addEventListener('abort', fail, { once: true });
+  });
+}
+
+test('production request timeout is 20000 ms', () => {
+  assert.equal(REQUEST_TIMEOUT_MS, 20000);
+});
+
+test('a stalled request rejects with TIMEOUT and is retried exactly once', { timeout: 5000 }, async () => {
+  let calls = 0;
+  let delayMs = null;
+  const fetchImpl = (_url, init) => {
+    calls += 1;
+    return hangUntilAbort(init);
+  };
+  await assert.rejects(
+    extractMedicines({ text: DOC }, {
+      apiKey: 'k', model: 'm',
+      fetchImpl,
+      delay: async (ms) => { delayMs = ms; },
+      timeoutMs: 25, // injectable so the test does not wait 20 s
+    }),
+    (err) => err instanceof ExtractError && err.code === 'TIMEOUT',
+  );
+  assert.equal(calls, 2); // one attempt plus exactly one retry
+  assert.ok(delayMs >= 1000 && delayMs <= 2500, `retry waits RETRY_DELAY_MS, got ${delayMs}`);
+});
+
+test('a stalled response body is also covered by the request timeout', { timeout: 5000 }, async () => {
+  let calls = 0;
+  await assert.rejects(
+    extractMedicines({ text: DOC }, {
+      apiKey: 'k',
+      model: 'm',
+      fetchImpl: (_url, init) => {
+        calls += 1;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => hangUntilAbort(init),
+        });
+      },
+      delay: async () => {},
+      timeoutMs: 25,
+    }),
+    (err) => err instanceof ExtractError && err.code === 'TIMEOUT',
+  );
+  assert.equal(calls, 2);
+});
+
+test('a caller signal still cancels the request and is not retried', { timeout: 5000 }, async () => {
+  let calls = 0;
+  const controller = new AbortController();
+  const fetchImpl = (_url, init) => {
+    calls += 1;
+    controller.abort(); // caller cancels while the request is in flight
+    return hangUntilAbort(init);
+  };
+  await assert.rejects(
+    extractMedicines({ text: DOC }, {
+      apiKey: 'k', model: 'm',
+      fetchImpl,
+      delay: async () => {},
+      signal: controller.signal,
+      timeoutMs: 5000,
+    }),
+    (err) => err.name === 'AbortError' && !(err instanceof ExtractError),
+  );
+  assert.equal(calls, 1); // caller cancellation never retries
+});
+
+test('first attempt times out and the retry returns the medicines', { timeout: 5000 }, async () => {
+  let calls = 0;
+  const reply = geminiReply(JSON.stringify({
+    medicines: [{
+      name: 'Metformin',
+      strength_value: 500,
+      strength_unit: 'mg',
+      frequency_text: 'twice daily',
+      evidence: DOC,
+      uncertain: false,
+    }],
+  }));
+  const fetchImpl = (_url, init) => {
+    calls += 1;
+    return calls === 1 ? hangUntilAbort(init) : reply();
+  };
+  const { medicines } = await extractMedicines({ text: DOC }, {
+    apiKey: 'k', model: 'm',
+    fetchImpl,
+    delay: async () => {},
+    timeoutMs: 25,
+  });
+  assert.equal(calls, 2);
+  assert.equal(medicines.length, 1);
+  assert.equal(medicines[0].name, 'Metformin');
+  assert.equal(medicines[0].uncertain, false);
 });

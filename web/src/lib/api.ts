@@ -52,8 +52,9 @@ export async function postExtract(body: ExtractBody): Promise<ExtractOutcome> {
     };
   }
 
-  return {
-    failed: false,
-    medicines: Array.isArray(payload?.medicines) ? (payload.medicines as Medicine[]) : [],
-  };
+  if (!Array.isArray(payload?.medicines)) {
+    return { failed: true, message: DEFAULT_FAILURE, offerDemo: true };
+  }
+
+  return { failed: false, medicines: payload.medicines as Medicine[] };
 }

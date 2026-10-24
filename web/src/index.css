@@ -8,8 +8,9 @@
 @custom-variant dark (&:where(@media (prefers-color-scheme: dark) &));
 
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-heading: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -31,6 +32,8 @@
     --color-success: var(--success);
     --color-warning: var(--warning);
     --color-info: var(--info);
+    --color-redline: var(--redline);
+    --color-greenline: var(--greenline);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -40,64 +43,131 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/*
- * MedAlign tokens (design-system/medalign/MASTER.md):
- * light cyan + health green. --primary stays the CTA green (#047857, MASTER
- * .btn-primary); cyan #0E7490 rides along as --info (interactive, ring, borders).
- * Destructive red is reserved for destructive user actions only, never statuses.
- */
+/* Redline tokens: warm paper, durable ink, one difference red, one match green. */
 :root {
-    --background: #ecfeff;
-    --foreground: #164e63;
-    --card: #ffffff;
-    --card-foreground: #164e63;
-    --popover: #ffffff;
-    --popover-foreground: #164e63;
-    --primary: #047857;
-    --primary-foreground: #ffffff;
-    --secondary: #e8f1f6;
-    --secondary-foreground: #164e63;
-    --muted: #e8f1f6;
-    --muted-foreground: #475569;
-    --accent: #e8f1f6;
-    --accent-foreground: #164e63;
-    --destructive: #dc2626;
-    --border: #a5f3fc;
-    --input: #94a3b8;
-    --ring: #0e7490;
-    --success: #047857;
-    --warning: #b45309;
-    --info: #0e7490;
+    --background: #F8F4EA;
+    --foreground: #25201A;
+    --card: #FFFDF6;
+    --card-foreground: #25201A;
+    --popover: #FFFDF6;
+    --popover-foreground: #25201A;
+    --primary: #25201A;
+    --primary-foreground: #FFFDF6;
+    --secondary: #EFE7D8;
+    --secondary-foreground: #25201A;
+    --muted: #EFE7D8;
+    --muted-foreground: #5B5348;
+    --accent: #EFE7D8;
+    --accent-foreground: #25201A;
+    --destructive: #B42318;
+    --border: #D8CDBD;
+    --input: #B9AA94;
+    --ring: #25201A;
+    --success: #166534;
+    --warning: #B42318;
+    --info: #25201A;
+    --redline: #B42318;
+    --greenline: #166534;
+    --paper-rule: #D8CDBD;
     --radius: 0.5rem;
-    --shadow-md: 0 2px 8px rgba(6, 50, 60, 0.10);
-    --shadow-lg: 0 8px 20px rgba(6, 50, 60, 0.14);
-    --shadow-scroll: 0 14px 30px rgba(6, 50, 60, 0.12), 0 34px 60px rgba(16, 185, 129, 0.08);
+    --shadow-md: 0 2px 8px rgba(37, 32, 26, 0.10);
+    --shadow-lg: 0 8px 20px rgba(37, 32, 26, 0.14);
+    --shadow-scroll: 0 14px 30px rgba(37, 32, 26, 0.10);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #08202a;
-    --foreground: #dff5fb;
-    --card: #0c2b36;
-    --card-foreground: #dff5fb;
-    --popover: #0c2b36;
-    --popover-foreground: #dff5fb;
-    --primary: #34d399;
-    --primary-foreground: #052e24;
-    --secondary: #123642;
-    --secondary-foreground: #dff5fb;
-    --muted: #123642;
-    --muted-foreground: #9fb8c4;
-    --accent: #123642;
-    --accent-foreground: #dff5fb;
-    --destructive: #ef4444;
-    --border: #1e4d5c;
-    --input: #2a5a66;
-    --ring: #22d3ee;
-    --success: #34d399;
-    --warning: #fbbf24;
-    --info: #38bdf8;
-    --shadow-scroll: 0 14px 30px rgba(0, 0, 0, 0.22), 0 34px 60px rgba(16, 185, 129, 0.10);
+    --background: #171310;
+    --foreground: #F4EDE1;
+    --card: #221D18;
+    --card-foreground: #F4EDE1;
+    --popover: #221D18;
+    --popover-foreground: #F4EDE1;
+    --primary: #F4EDE1;
+    --primary-foreground: #171310;
+    --secondary: #332C24;
+    --secondary-foreground: #F4EDE1;
+    --muted: #332C24;
+    --muted-foreground: #CFC3B4;
+    --accent: #332C24;
+    --accent-foreground: #F4EDE1;
+    --destructive: #FF9D90;
+    --border: #514638;
+    --input: #6C6052;
+    --ring: #F4EDE1;
+    --success: #86DFAB;
+    --warning: #FF9D90;
+    --info: #F4EDE1;
+    --redline: #FF9D90;
+    --greenline: #86DFAB;
+    --paper-rule: #514638;
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.34);
+    --shadow-scroll: 0 14px 30px rgba(0, 0, 0, 0.28);
+  }
+}
+
+@layer components {
+  /* Two-source metaphor. The doctor side is ruled paper; the pharmacy side is
+     a machine label with a perforated edge. Both use local CSS only. */
+  .doctor-slip {
+    border: 1px solid var(--border);
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(2rem - 1px),
+        var(--paper-rule) calc(2rem - 1px),
+        var(--paper-rule) 2rem
+      ),
+      var(--card);
+    box-shadow: var(--shadow-md);
+  }
+
+  .pharmacy-slip {
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    background:
+      radial-gradient(circle at 0 50%, var(--background) 4px, transparent 4.5px),
+      radial-gradient(circle at 100% 50%, var(--background) 4px, transparent 4.5px),
+      var(--card);
+    background-size: 12px 100%;
+    background-repeat: repeat-y;
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Status is a rubber stamp: shape, text, border, and a static tilt. */
+  .stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border: 2px solid currentColor;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transform: rotate(-2deg);
+  }
+  .stamp-difference { color: var(--redline); background: color-mix(in srgb, var(--redline) 8%, transparent); }
+  .stamp-match { color: var(--greenline); background: color-mix(in srgb, var(--greenline) 8%, transparent); }
+  .stamp-neutral { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+
+  /* Proofreader mark. Only RedlineEvidence creates this element, and only from
+     differing field values. Model text is never treated as markup. */
+  .redline-mark {
+    border-bottom: 2px solid var(--redline);
+    background: color-mix(in srgb, var(--redline) 12%, transparent);
+    color: var(--redline);
+    font-weight: 700;
+    padding: 0 0.08em;
+  }
+
+  .flat-surface {
+    border: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -233,6 +303,13 @@
 }
 
 @layer base {
+  /* Anchor navigation on the landing page scrolls smoothly only when the user
+     has not asked for reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
   * {
     @apply border-border outline-ring/50;
     }

@@ -8,29 +8,41 @@ import { Trash2, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KIND_LABEL } from '@/lib/present';
-import { fieldIsReadable } from '@/lib/uncertainty';
+import { resolverItems } from '@/lib/uncertainty';
 import type { Medicine, SourceKey } from '@/lib/types';
+import type { ResolverReason } from '@/lib/uncertainty';
 
 const UNIT_OPTIONS = ['mg', 'mcg', 'µg', 'g', 'ml'];
 
 function Field({
   label,
-  uncertain,
+  reason,
   children,
 }: {
   label: string;
-  uncertain: boolean;
+  reason?: ResolverReason;
   children: ReactNode;
 }) {
+  const warning = Boolean(reason);
+  const warningLabel = reason === 'uncertain_extraction'
+    ? ' (hard to read — please confirm)'
+    : reason === 'missing'
+      ? ' (missing — add a value)'
+      : reason === 'unreadable_unit'
+        ? ' (unit unreadable — choose a unit)'
+        : reason === 'unreadable_frequency'
+          ? ' (could not be compared — edit wording)'
+          : '';
+
   return (
     <label
       className={[
         'flex min-w-0 flex-col gap-1 rounded-lg border p-2.5',
-        uncertain ? 'border-warning/60 bg-warning/5' : 'border-border/70 bg-card/40',
+        warning ? 'border-warning/60 bg-warning/5' : 'border-border/70 bg-card/40',
       ].join(' ')}
     >
       <span className="text-[12px] font-medium text-foreground">
-        {uncertain ? label + ' (hard to read — please confirm)' : label}
+        {label + warningLabel}
       </span>
       {children}
     </label>
@@ -41,14 +53,12 @@ export function MedicineRow({
   sourceKey,
   row,
   index,
-  fromImage,
   onPatch,
   onDelete,
 }: {
   sourceKey: SourceKey;
   row: Medicine;
   index: number;
-  fromImage: boolean;
   onPatch: (patch: Partial<Medicine>) => void;
   onDelete: () => void;
 }) {
@@ -60,10 +70,21 @@ export function MedicineRow({
     ? UNIT_OPTIONS
     : [row.strength_unit, ...UNIT_OPTIONS].filter((unit): unit is string => Boolean(unit));
 
-  const nameUncertain = row.uncertain || !fieldIsReadable(row, 'name');
-  const doseUncertain = row.uncertain || !fieldIsReadable(row, 'strength');
-  const unitUncertain = doseUncertain;
-  const frequencyUncertain = row.uncertain || !fieldIsReadable(row, 'frequency');
+  const pendingReasons = new Map(
+    resolverItems(sourceKey, [row]).map((item) => [item.field, item.reason]),
+  );
+  const nameReason = pendingReasons.get('name');
+  const strengthReason = pendingReasons.get('strength');
+  const frequencyReason = pendingReasons.get('frequency');
+  const doseReason = strengthReason === 'unreadable_unit'
+    ? undefined
+    : strengthReason === 'missing' && row.strength_value !== null
+      ? undefined
+      : strengthReason;
+  const unitReason = strengthReason === 'missing' && row.strength_unit?.trim()
+    ? undefined
+    : strengthReason;
+  const fromImage = row.fromImage === true;
   const rowId = row.rowId ?? sourceKey + '-' + index;
 
   function setText(field: 'name' | 'frequency_text', value: string) {
@@ -91,7 +112,7 @@ export function MedicineRow({
         )}
       </div>
 
-      <Field label="Name" uncertain={nameUncertain}>
+      <Field label="Name" reason={nameReason}>
         <Input
           id={`med-${sourceKey}-${rowId}-name`}
           name="name"
@@ -103,7 +124,7 @@ export function MedicineRow({
       </Field>
 
       <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Dose number" uncertain={doseUncertain}>
+        <Field label="Dose number" reason={doseReason}>
           <Input
             id={`med-${sourceKey}-${rowId}-strength`}
             name="strength_value"
@@ -123,7 +144,7 @@ export function MedicineRow({
           />
         </Field>
 
-        <Field label="Unit" uncertain={unitUncertain}>
+        <Field label="Unit" reason={unitReason}>
           <select
             id={`med-${sourceKey}-${rowId}-strength-unit`}
             name="strength_unit"
@@ -143,7 +164,7 @@ export function MedicineRow({
         </Field>
       </div>
 
-      <Field label="How often" uncertain={frequencyUncertain}>
+      <Field label="How often" reason={frequencyReason}>
         <Input
           id={`med-${sourceKey}-${rowId}-frequency`}
           name="frequency_text"

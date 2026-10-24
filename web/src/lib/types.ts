@@ -24,6 +24,8 @@ export type Medicine = {
   uncertain: boolean;
   /** Client-side only: the row was read from a photo, not pasted text. */
   fromImage?: boolean;
+  /** Client-side only: where the current row's values came from. */
+  origin?: 'manual' | 'extracted' | 'demo';
   /** Client-side only: stable React key across add/delete (never sent/saved). */
   rowId?: string;
   /** Client-side only snapshot from this session; extraction is never overwritten. */
@@ -53,6 +55,7 @@ export type Coverage = {
   doctorRecords: number;
   labelRecords: number;
   pairsCompared: number;
+  fieldsAvailable: number;
   fieldsCompared: number;
   fieldsMatched: number;
   fieldsDifferent: number;
