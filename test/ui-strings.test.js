@@ -480,6 +480,47 @@ test('workflow navigation is a responsive step rail with explained lockouts', as
   assert.ok(stepNav.includes('pb-[calc(env(safe-area-inset-bottom)+0.5rem)]'), 'mobile bar respects the device safe area');
 });
 
+test('Redline foundation uses paper tokens and flat source slips without glass or scroll effects', async () => {
+  const styles = await readFile(path.join(ROOT, 'web/src/index.css'), 'utf8');
+  for (const token of [
+    '--background: #F8F4EA',
+    '--card: #FFFDF6',
+    '--foreground: #25201A',
+    '--muted-foreground: #5B5348',
+    '--border: #D8CDBD',
+    '--redline: #B42318',
+    '--greenline: #166534',
+    '--background: #171310',
+    '--card: #221D18',
+    '--foreground: #F4EDE1',
+    '--muted-foreground: #CFC3B4',
+    '--border: #514638',
+    '--redline: #FF9D90',
+    '--greenline: #86DFAB',
+  ]) assert.ok(styles.includes(token), `Redline token missing: ${token}`);
+  assert.ok(styles.includes('.doctor-slip'), 'doctor source uses ruled paper');
+  assert.ok(styles.includes('.pharmacy-slip'), 'pharmacy source uses a label slip');
+  assert.ok(styles.includes('font-family: var(--font-mono)'), 'pharmacy slip is monospace');
+  assert.ok(styles.includes('.stamp-difference') && styles.includes('.stamp-match'));
+  for (const retired of ['.mesh-bg', '.liquid-glass-btn', '.glass-card', '.grad-text', '[data-scroll-card]']) {
+    assert.ok(!styles.includes(retired), `retired visual effect remains: ${retired}`);
+  }
+});
+
+test('workflow shell keeps the step navigation and removes animated and scroll-wrapped shell layers', async () => {
+  const app = await readFile(path.join(ROOT, 'web/src/App.tsx'), 'utf8');
+  const nav = await readFile(path.join(ROOT, 'web/src/components/StepNav.tsx'), 'utf8');
+  assert.ok(app.includes('<StepNav'));
+  assert.ok(app.includes('data-screen={state.step}'));
+  assert.ok(!app.includes('MotionConfig') && !app.includes('motion.div'));
+  assert.ok(!app.includes('ContainerScroll'));
+  assert.ok(nav.includes('aria-current={current ? \'step\' : undefined}'));
+  assert.ok(nav.includes('aria-disabled={!enabled ? \'true\' : undefined}'));
+  assert.ok(nav.includes('fixed inset-x-0 bottom-0'));
+  assert.ok(nav.includes('lg:sticky'));
+  assert.ok(nav.includes('min-h-11'));
+});
+
 test('Home is a landing page: adapted hero, anchor nav, and bento features', async () => {
   const hero = await readFile(path.join(ROOT, 'web/src/components/ui/ink-orbit-hero.tsx'), 'utf8');
   const bento = await readFile(path.join(ROOT, 'web/src/components/ui/feature-section-with-bento-grid.tsx'), 'utf8');
