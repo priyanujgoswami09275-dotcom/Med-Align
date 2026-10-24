@@ -370,85 +370,42 @@ test('coverage reports raw field availability separately from actual comparisons
   assert.ok(strip.includes('Fields with values available:'), 'the UI labels the availability count');
 });
 
-test('tool screens use the reduced-motion-aware scroll container, not the Home page', async () => {
-  const component = await readFile(
-    path.join(ROOT, 'web/src/components/ui/container-scroll-animation.tsx'),
-    'utf8',
-  );
-  for (const file of [
-    'web/src/screens/Add.tsx',
-    'web/src/screens/Review.tsx',
-    'web/src/screens/Report.tsx',
-  ]) {
-    const source = await readFile(path.join(ROOT, file), 'utf8');
-    assert.ok(source.includes('ContainerScroll'), `${file} must use the scroll container`);
-    assert.ok(source.includes('<ContainerScroll'), `${file} must render the scroll container`);
-  }
-  const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
+test('all workflow screens avoid the retired 3D scroll wrappers', async () => {
   const styles = await readFile(path.join(ROOT, 'web/src/index.css'), 'utf8');
-  assert.ok(!home.includes('ContainerScroll'), 'Home must remain unchanged by the scroll effect');
-  assert.ok(component.includes('useScroll({'));
-  assert.ok(component.includes('target: containerRef'));
-  assert.ok(component.includes('useReducedMotion'));
-  assert.ok(component.includes('MotionValue'));
-  assert.ok(component.includes('motion/react'), 'uses the project motion library');
-  assert.ok(component.includes('[4, 0, -4]'), 'scroll tilt stays subtle');
-  assert.ok(component.includes('[1.01, 1, 1.01]'), 'scroll scale does not shrink content');
-  assert.ok(component.includes('rotateX: reduceMotion ? 0 : rotate'));
-  assert.ok(styles.includes('[data-scroll-card] :is(button, input, select, textarea):not(.sr-only)'));
-  assert.ok(styles.includes('min-height: 48px'), '3D projection must preserve 44px targets');
+  for (const file of ['Home.tsx', 'Add.tsx', 'Review.tsx', 'Report.tsx']) {
+    const source = await readFile(path.join(ROOT, 'web/src/screens', file), 'utf8');
+    assert.ok(!source.includes('ContainerScroll'), `${file} must not use the scroll wrapper`);
+  }
+  assert.ok(!styles.includes('[data-scroll-card]'));
+  await assert.rejects(
+    readFile(path.join(ROOT, 'web/src/components/ui/container-scroll-animation.tsx'), 'utf8'),
+    'the unused 3D scroll component is removed',
+  );
 });
 
-test('buttons carry the MedAlign liquid-glass treatment (white/green theme, every variant)', async () => {
+test('buttons use flat paper tokens with visible focus and accessible touch targets', async () => {
   const button = await readFile(path.join(ROOT, 'web/src/components/ui/button.tsx'), 'utf8');
-  const liquidButton = await readFile(path.join(ROOT, 'web/src/components/ui/liquid-glass-button.tsx'), 'utf8');
   const styles = await readFile(path.join(ROOT, 'web/src/index.css'), 'utf8');
 
-  // The existing shared button API is preserved (no parallel Radix Slot button).
+  // Preserve the existing Base UI-backed API, without the retired glass layer.
   assert.ok(button.includes('export { Button, buttonVariants }'));
   assert.ok(button.includes('ButtonPrimitive'));
   assert.ok(!button.includes('@radix-ui/react-slot'), 'keep the Base UI button primitive');
-  assert.ok(liquidButton.includes('Button as LiquidButton'));
-
-  // Every variant opts into the liquid-glass surface; the inline link variant
-  // keeps its underline while sharing the frosted rim.
-  assert.ok(button.includes('liquid-glass-btn'), 'variants use the liquid-glass surface');
-  assert.ok(button.includes('link: "liquid-glass-link'));
-
-  // Frosted surface: blur with a solid fallback and a luminous rim light.
-  assert.ok(styles.includes('.liquid-glass-btn'));
-  assert.ok(styles.includes('backdrop-filter: blur('));
-  assert.ok(styles.includes('-webkit-backdrop-filter: blur('));
-  assert.ok(styles.includes('@supports'));
-  assert.ok(/\.liquid-glass-btn[\s\S]{0,400}inset 0 1px 0/.test(styles), 'rim-light highlight');
-
-  // Theme-matched white/green/dark: no purple or pink anywhere.
-  for (const banned of ['purple', 'pink', 'fuchsia', '#a855f7', '#ec4899', '#d946ef']) {
-    assert.ok(!button.toLowerCase().includes(banned), `button picks up banned palette word: ${banned}`);
-  }
-  assert.ok(styles.includes('var(--primary)'), 'glass leans on the MedAlign green primary');
+  assert.ok(!button.includes('liquid-glass'));
+  assert.ok(button.includes('min-h-11') && button.includes('min-w-11'));
+  assert.ok(button.includes('bg-primary') && button.includes('bg-card'));
 
   // Destructive buttons keep their danger distinction.
-  assert.ok(button.includes('bg-destructive'), 'destructive stays visibly destructive');
+  assert.ok(button.includes('bg-destructive'));
   assert.ok(button.includes('text-destructive'));
 
-  // Accessibility and motion guardrails.
   assert.ok(button.includes('focus-visible:ring-ring/50'), 'visible focus ring survives');
   assert.ok(styles.includes('prefers-reduced-motion: reduce'), 'reduced motion is honored');
-
-  // Home CTAs keep their copy; the shared Button import moved into the hero.
-  const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
   const wordmark = await readFile(path.join(ROOT, 'web/src/components/Wordmark.tsx'), 'utf8');
   const dropzone = await readFile(path.join(ROOT, 'web/src/components/Dropzone.tsx'), 'utf8');
-  const medicineRow = await readFile(path.join(ROOT, 'web/src/components/MedicineRow.tsx'), 'utf8');
-  const landingHero = await readFile(path.join(ROOT, 'web/src/components/ui/ink-orbit-hero.tsx'), 'utf8');
-  assert.ok(home.includes('Start comparing'));
-  assert.ok(home.includes('Try the demo case'));
-  assert.ok(landingHero.includes('./button'), 'landing CTAs keep the shared glass Button');
-  assert.ok(wordmark.includes('liquid-glass-btn'), 'in-app wordmark button also has the glass treatment');
-  assert.ok(dropzone.includes('liquid-glass-btn'), 'photo chooser also has the glass treatment');
+  assert.ok(!wordmark.includes('liquid-glass'));
+  assert.ok(!dropzone.includes('liquid-glass'));
   assert.ok(dropzone.includes('motion-reduce:transition-none'));
-  assert.ok(medicineRow.includes('variant="destructive"'), 'delete actions retain a destructive visual distinction');
 });
 
 test('workflow navigation is a responsive step rail with explained lockouts', async () => {
