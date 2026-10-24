@@ -128,7 +128,7 @@ export function Dropzone({
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={[
-            'liquid-glass-btn liquid-glass-outline flex min-h-11 w-full cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed px-4 py-4 text-center transition-colors motion-reduce:transition-none',
+            'flex min-h-11 w-full cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed bg-card px-4 py-4 text-center transition-colors motion-reduce:transition-none',
             dragging
               ? 'border-ring bg-ring/10'
               : 'border-input bg-card/50 hover:border-ring hover:bg-ring/5',

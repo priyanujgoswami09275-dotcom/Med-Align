@@ -3,16 +3,13 @@
 // All labels/hints/strings are verbatim from public/app.js; icons + text + color
 // always travel together.
 import { useRef, useState } from 'react';
-import { motion } from 'motion/react';
 import { ArrowLeft, ClipboardCopy } from 'lucide-react';
 
 import { GlassCard } from '@/components/GlassCard';
 import { CoverageStrip } from '@/components/CoverageStrip';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WhyFlagged } from '@/components/WhyFlagged';
-import { riseVariants } from '@/components/motion';
 import { Button } from '@/components/ui/button';
-import { ContainerScroll } from '@/components/ui/container-scroll-animation';
 import { pharmacistQuestion } from '@/lib/compare';
 import { resolverItems } from '@/lib/uncertainty';
 import { FIELD_TEXTS, STATUS_PRESENTATION } from '@/lib/present';
@@ -91,7 +88,7 @@ function ReportCard({ result }: { result: Result }) {
 
   return (
     <article
-      className={`glass-card rounded-xl border-l-4 p-4 sm:p-5 ${CARD_ACCENT[presentation.variant] ?? ''}`}
+      className={`flat-surface rounded-lg border-l-4 p-4 sm:p-5 ${CARD_ACCENT[presentation.variant] ?? ''}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="text-lg font-semibold text-foreground">{result.displayName}</h2>
@@ -197,7 +194,7 @@ export function Report({
 
   return (
     <section aria-labelledby="report-title" className="flex flex-col gap-5">
-      <motion.header variants={riseVariants} className="flex flex-col gap-2">
+      <header className="flex flex-col gap-2">
         <h1 id="report-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">
           What differs
         </h1>
@@ -205,19 +202,19 @@ export function Report({
           These are only differences between the two wordings. Which instruction to follow is a
           question for your pharmacist, not for this tool.
         </p>
-      </motion.header>
+      </header>
 
       {results.length === 0 ? (
-        <motion.div variants={riseVariants}>
+        <div>
           <GlassCard>
             <p className="text-[14px] text-muted-foreground">
               Nothing to show: no medicine rows were compared.
             </p>
           </GlassCard>
-        </motion.div>
+        </div>
       ) : (
         <>
-          <motion.section variants={riseVariants} aria-labelledby="report-summary-title">
+          <section aria-labelledby="report-summary-title">
             <h2 id="report-summary-title" className="sr-only">
               Summary
             </h2>
@@ -232,13 +229,13 @@ export function Report({
                 </li>
               ))}
             </ul>
-          </motion.section>
+          </section>
 
-          <motion.div variants={riseVariants}>
+          <div>
             <CoverageStrip sources={sources} results={results} waitingReviewCount={waitingReviewCount} />
-          </motion.div>
+          </div>
           {waitingReviewCount > 0 && (
-            <motion.div variants={riseVariants}>
+            <div>
               <Button
                 type="button"
                 variant="outline"
@@ -247,20 +244,16 @@ export function Report({
               >
                 Review {waitingReviewCount} unresolved fields
               </Button>
-            </motion.div>
+            </div>
           )}
 
-          <motion.div variants={riseVariants} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4">
             {results.map((result, index) => (
-              <ContainerScroll key={(result.key ?? 'unnamed') + '-' + index}>
-                <ReportCard
-                  result={result}
-                />
-              </ContainerScroll>
+              <ReportCard key={(result.key ?? 'unnamed') + '-' + index} result={result} />
             ))}
-          </motion.div>
+          </div>
 
-          <motion.div variants={riseVariants} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -292,9 +285,9 @@ export function Report({
                 Copied. Paste it to your pharmacist.
               </p>
             )}
-          </motion.div>
+          </div>
 
-          <motion.div variants={riseVariants}>
+          <div>
             <GlassCard className="flex flex-col gap-2">
               <h2 className="text-lg font-semibold text-foreground">
                 Question for your pharmacist
@@ -313,7 +306,7 @@ export function Report({
                 {question}
               </p>
             </GlassCard>
-          </motion.div>
+          </div>
 
           <textarea
             ref={hiddenTarget}

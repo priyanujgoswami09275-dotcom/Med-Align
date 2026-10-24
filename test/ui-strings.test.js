@@ -352,12 +352,12 @@ test('editing sources invalidates old report results before Report can be reopen
 test('privacy wording distinguishes extraction transmission from MedAlign storage', async () => {
   const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
   const add = await readFile(path.join(ROOT, 'web/src/screens/Add.tsx'), 'utf8');
-  const bento = await readFile(path.join(ROOT, 'web/src/components/ui/feature-section-with-bento-grid.tsx'), 'utf8');
-  for (const [name, source] of [['Home', home], ['Add', add], ['features', bento]]) {
+  for (const [name, source] of [['Home', home], ['Add', add]]) {
     assert.ok(source.includes('sent to the extraction service'), `${name} explains transmission for reading`);
     assert.ok(source.includes('MedAlign does not save'), `${name} scopes the storage claim to MedAlign`);
     assert.ok(!source.includes('Nothing is stored anywhere'), `${name} does not make a provider-wide claim`);
   }
+  assert.ok(home.includes('No sign-up.'), 'Home retains its privacy line');
 });
 
 test('coverage reports raw field availability separately from actual comparisons', async () => {
@@ -478,54 +478,32 @@ test('workflow shell keeps the step navigation and removes animated and scroll-w
   assert.ok(nav.includes('min-h-11'));
 });
 
-test('Home is a landing page: adapted hero, anchor nav, and bento features', async () => {
-  const hero = await readFile(path.join(ROOT, 'web/src/components/ui/ink-orbit-hero.tsx'), 'utf8');
-  const bento = await readFile(path.join(ROOT, 'web/src/components/ui/feature-section-with-bento-grid.tsx'), 'utf8');
+test('Home is a live Redline demonstration with the demo CTA first', async () => {
   const home = await readFile(path.join(ROOT, 'web/src/screens/Home.tsx'), 'utf8');
-  const styles = await readFile(path.join(ROOT, 'web/src/index.css'), 'utf8');
-
-  // The hero is present and wired to the existing state machine.
-  assert.ok(home.includes('<InkOrbitHero'), 'Home renders the adapted hero');
-  assert.ok(home.includes('titleTop="Spot differences between"'));
-  assert.ok(home.includes("your doctor's note") && home.includes('your pharmacy label'));
-  assert.ok(home.includes('primaryCta="Start comparing"') && home.includes('onPrimary={onStart}'));
-  assert.ok(home.includes('secondaryCta="Try the demo case"') && home.includes('onSecondary={onDemo}'));
-  assert.ok(home.includes('Free demo • Synthetic data'), 'the real proof pill stays in Home');
-
-  // Theme adaptation: Lexend only; no foreign fonts or marketing leftovers.
-  assert.ok(hero.includes("'Lexend Variable'"), 'hero uses the app font');
-  for (const banned of ['Manrope', 'Newsreader', 'DemoDialog', 'needs a human', '12,400']) {
-    assert.ok(!hero.includes(banned), `hero must drop: ${banned}`);
+  const { status, differing } = compare([DEMO_DOCTOR_MEDICINES[0]], [DEMO_LABEL_MEDICINES[0]])[0];
+  assert.equal(status, 'NEEDS_CHECKING');
+  assert.deepEqual(differing, ['strength', 'frequency']);
+  assert.ok(home.includes('compare([doctorMetformin], [labelMetformin])'));
+  assert.ok(home.includes('<RedlineEvidence result={metforminResult} sourceKey="doctor" />'));
+  assert.ok(home.includes('<RedlineEvidence result={metforminResult} sourceKey="label" />'));
+  assert.ok(home.includes('doctor-slip') && home.includes('pharmacy-slip'));
+  assert.ok(home.includes('Metformin'));
+  assert.ok(home.includes('Try the demo case') && home.includes('Start comparing'));
+  assert.ok(home.indexOf('Try the demo case') < home.indexOf('Start comparing'), 'demo is the primary CTA');
+  for (const retired of ['InkOrbitHero', 'Feature', 'Sections', 'glass-card', 'ContainerScroll']) {
+    assert.ok(!home.includes(retired), `retired Home architecture remains: ${retired}`);
   }
+  assert.ok(home.includes('Review') && home.includes('Report'), 'Home introduces the review and report steps');
+});
 
-  // Sculpture and motion guardrails survive the adaptation.
-  assert.ok(hero.includes('InkOrbitSculpture') && hero.includes('canvas'), '3D sculpture kept');
-  assert.ok(hero.includes('prefers-reduced-motion') && hero.includes('prefers-color-scheme'));
-  assert.match(hero, /\.ih-word\{[^}]*background-clip:text/, 'the visible cycling word owns its gradient text clip');
-
-  // Landing CTAs stay on the shared liquid-glass Button.
-  assert.ok(hero.includes('./button') && hero.includes('<Button'));
-
-  // Anchor nav links to real sections, with motion-safe smooth scrolling.
-  for (const id of ['features', 'how-it-works', 'example-result', 'what-we-compare']) {
-    assert.ok(home.includes(`'#${id}'`), `anchor target missing: ${id}`);
-    assert.ok(home.includes('href={section.href}'), 'nav pills link to the anchor targets');
-    assert.ok(home.includes(`id="${id}"`), `section id missing: ${id}`);
-  }
-  assert.ok(styles.includes('scroll-behavior: smooth'), 'smooth scroll enabled');
-
-  // Bento features: real MedAlign copy, existing Badge, no placeholders.
-  assert.ok(bento.includes("import { Badge } from './badge'"), 'reuses the existing Badge');
-  for (const copy of [
-    'What MedAlign does',
-    'Reads both lists',
-    'You check what we read',
-    'How your data is handled',
-    'Shows differences with evidence',
-  ]) {
-    assert.ok(bento.includes(copy), `bento copy missing: ${copy}`);
-  }
-  assert.ok(!bento.includes('Pay supplier invoices'), 'placeholder copy must be gone');
+test('Redline evidence highlights only side-unique tokens from differing raw fields', async () => {
+  const evidence = await readFile(path.join(ROOT, 'web/src/components/RedlineEvidence.tsx'), 'utf8');
+  assert.ok(evidence.includes('result.differing'), 'field selection comes from the shared result');
+  assert.ok(!evidence.includes('result.fields'), 'matches and unknown fields never create redlines');
+  assert.ok(evidence.includes('strength_value') && evidence.includes('frequency_text'));
+  assert.ok(evidence.includes('redline-mark'), 'unique quote tokens use the proofreader mark');
+  assert.ok(evidence.includes('<mark'), 'evidence stays React text with semantic mark elements');
+  assert.ok(!evidence.includes('dangerouslySetInnerHTML'));
 });
 
 test('index.html contains the required footer disclaimer', async () => {

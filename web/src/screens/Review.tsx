@@ -2,15 +2,12 @@
 // sticky Back/Compare bar. Text and messages are verbatim from public/app.js.
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
-import { motion } from 'motion/react';
 import { ArrowLeft, Plus, Scale } from 'lucide-react';
 
 import { GlassCard } from '@/components/GlassCard';
 import { MedicineRow } from '@/components/MedicineRow';
 import { ResolverQueue } from '@/components/ResolverQueue';
-import { riseVariants } from '@/components/motion';
 import { Button } from '@/components/ui/button';
-import { ContainerScroll } from '@/components/ui/container-scroll-animation';
 import type { Action } from '@/lib/state';
 import type { Medicine, SourceKey, SourceState } from '@/lib/types';
 
@@ -55,21 +52,20 @@ function ReviewPanel({
           </p>
         )}
         {source.medicines.map((row: Medicine, index: number) => (
-          <ContainerScroll key={row.rowId ?? sourceKey + '-' + index}>
-            <MedicineRow
-              sourceKey={sourceKey}
-              row={row}
-              index={index}
-              onPatch={(patch) => {
-                if (!row.rowId) return;
-                dispatch({ type: 'patchMedicine', key: sourceKey, rowId: row.rowId, patch });
-              }}
-              onDelete={() => {
-                if (!row.rowId) return;
-                dispatch({ type: 'deleteRow', key: sourceKey, rowId: row.rowId });
-              }}
-            />
-          </ContainerScroll>
+          <MedicineRow
+            key={row.rowId ?? sourceKey + '-' + index}
+            sourceKey={sourceKey}
+            row={row}
+            index={index}
+            onPatch={(patch) => {
+              if (!row.rowId) return;
+              dispatch({ type: 'patchMedicine', key: sourceKey, rowId: row.rowId, patch });
+            }}
+            onDelete={() => {
+              if (!row.rowId) return;
+              dispatch({ type: 'deleteRow', key: sourceKey, rowId: row.rowId });
+            }}
+          />
         ))}
       </div>
 
@@ -114,7 +110,7 @@ export function Review({
 
   return (
     <section aria-labelledby="review-title" className="flex flex-col gap-5">
-      <motion.header variants={riseVariants} className="flex flex-col gap-2">
+      <header className="flex flex-col gap-2">
         <h1 id="review-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">
           Check what we read
         </h1>
@@ -122,19 +118,19 @@ export function Review({
           Fix anything that does not look right. Yellow rows were hard to read, so please confirm
           them.
         </p>
-      </motion.header>
+      </header>
 
-      <motion.div variants={riseVariants}>
+      <div>
         <ResolverQueue sources={sources} dispatch={dispatch} />
-      </motion.div>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <motion.div variants={riseVariants}>
+        <div>
           <ReviewPanel sourceKey="doctor" source={sources.doctor} dispatch={dispatch} />
-        </motion.div>
-        <motion.div variants={riseVariants}>
+        </div>
+        <div>
           <ReviewPanel sourceKey="label" source={sources.label} dispatch={dispatch} />
-        </motion.div>
+        </div>
       </div>
 
       <div aria-live="polite" className="flex flex-col gap-2">
@@ -176,7 +172,7 @@ export function Review({
         </p>
       )}
 
-      <div className="sticky bottom-0 z-20 -mx-4 mt-1 flex flex-wrap gap-2 border-t border-border/60 bg-background/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 -mx-4 mt-1 flex flex-wrap gap-2 border-t border-border bg-background px-4 py-3 sm:-mx-6 sm:px-6 lg:bottom-0">
         <Button
           type="button"
           variant="outline"

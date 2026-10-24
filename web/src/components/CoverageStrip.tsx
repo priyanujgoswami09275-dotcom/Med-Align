@@ -42,7 +42,7 @@ export function CoverageStrip({
       </h2>
       <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {items.map(({ key, icon: Icon, value }) => (
-          <li key={key} className="glass-card flex min-h-[76px] items-center gap-2 rounded-lg px-3 py-2.5">
+          <li key={key} className="flat-surface flex min-h-[76px] items-center gap-2 rounded-md px-3 py-2.5">
             <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
             <span className="min-w-0 text-[12px] leading-4 text-muted-foreground">
               {LABELS[key]}

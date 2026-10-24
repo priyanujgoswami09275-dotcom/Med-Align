@@ -40,9 +40,9 @@ export function StepNav({
       data-step-nav
       aria-label="Workflow steps"
       className={[
-        'fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-2',
-        'pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur print:hidden',
-        'lg:sticky lg:top-6 lg:h-fit lg:border-t-0 lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-0 lg:backdrop-blur-none',
+        'fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card px-2',
+        'pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] print:hidden',
+        'lg:sticky lg:top-6 lg:h-fit lg:border-t-0 lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-0',
       ].join(' ')}
     >
       <ol className="grid grid-cols-4 gap-1 lg:flex lg:flex-col lg:gap-1.5">
@@ -64,7 +64,7 @@ export function StepNav({
                   if (enabled) onNavigate(item.key);
                 }}
                 className={[
-                  'flex min-h-11 w-full cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border px-1 text-center text-[13px] font-semibold transition-colors outline-none motion-reduce:transition-none focus-visible:ring-3 focus-visible:ring-ring/50',
+                  'flex min-h-11 w-full cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border px-1 text-center text-[13px] font-semibold transition-colors motion-reduce:transition-none focus-visible:ring-3 focus-visible:ring-ring/50',
                   current
                     ? 'border-primary bg-primary text-primary-foreground'
                     : enabled

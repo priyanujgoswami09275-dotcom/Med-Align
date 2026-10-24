@@ -2,14 +2,10 @@
 // the extraction path. Every message and limit is verbatim from public/app.js.
 import { useState } from 'react';
 import type { Dispatch } from 'react';
-import { motion } from 'motion/react';
 import { BookOpenCheck, ListChecks } from 'lucide-react';
 
 import { Dropzone } from '@/components/Dropzone';
-import { GlassCard } from '@/components/GlassCard';
-import { riseVariants } from '@/components/motion';
 import { Button } from '@/components/ui/button';
-import { ContainerScroll } from '@/components/ui/container-scroll-animation';
 import { postExtract, type ExtractBody } from '@/lib/api';
 import { KIND_LABEL } from '@/lib/present';
 import type { Action } from '@/lib/state';
@@ -149,7 +145,7 @@ export function Add({
 
   return (
     <section aria-labelledby="add-title" aria-busy={busy} className="flex flex-col gap-5">
-      <motion.header variants={riseVariants} className="flex flex-col gap-2">
+      <header className="flex flex-col gap-2">
         <h1 id="add-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">
           MedAlign
         </h1>
@@ -157,15 +153,14 @@ export function Add({
           Put in what your doctor said and what your pharmacy label shows. We list what we read and
           where the two differ. You stay in charge of every answer.
         </p>
-      </motion.header>
+      </header>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <motion.div variants={riseVariants}>
-          <ContainerScroll>
-            <GlassCard className="flex h-full flex-col gap-3">
+        <div>
+            <section aria-labelledby="doctor-add-title" className="doctor-slip flex h-full flex-col gap-3 rounded-lg p-5">
               <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                 <ListChecks aria-hidden="true" className="size-5 text-info" />
-                What the doctor said
+                <span id="doctor-add-title">What the doctor said</span>
               </h2>
               <label htmlFor="doctor-text" className="text-[13px] font-medium text-foreground">
                 Paste the words your doctor said:
@@ -195,16 +190,14 @@ export function Add({
                 onLoaded={(image) => setPanelImage('doctor', image)}
                 onCleared={() => clearPanelImage('doctor')}
               />
-            </GlassCard>
-          </ContainerScroll>
-        </motion.div>
+            </section>
+        </div>
 
-        <motion.div variants={riseVariants}>
-          <ContainerScroll>
-            <GlassCard className="flex h-full flex-col gap-3">
+        <div>
+            <section aria-labelledby="label-add-title" className="pharmacy-slip flex h-full flex-col gap-3 rounded-lg p-5">
               <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                 <BookOpenCheck aria-hidden="true" className="size-5 text-info" />
-                What the pharmacy gave
+                <span id="label-add-title">What the pharmacy gave</span>
               </h2>
               <label htmlFor="label-text" className="text-[13px] font-medium text-foreground">
                 Paste the words on the label:
@@ -223,7 +216,7 @@ export function Add({
                   });
                   setMessage('');
                 }}
-                className="min-h-28 w-full resize-y rounded-lg border border-input bg-card/60 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="min-h-28 w-full resize-y rounded-md border border-input bg-card px-3 py-2 font-mono text-base text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
               <Dropzone
                 id="label-image"
@@ -234,12 +227,11 @@ export function Add({
                 onLoaded={(image) => setPanelImage('label', image)}
                 onCleared={() => clearPanelImage('label')}
               />
-            </GlassCard>
-          </ContainerScroll>
-        </motion.div>
+            </section>
+        </div>
       </div>
 
-      <motion.div variants={riseVariants} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -309,7 +301,7 @@ export function Add({
           When you choose Read both lists, your text or photo is sent to the extraction service for
           reading. MedAlign does not save it.
         </p>
-      </motion.div>
+      </div>
     </section>
   );
 }

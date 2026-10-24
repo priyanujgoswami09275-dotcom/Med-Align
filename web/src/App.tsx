@@ -1,12 +1,10 @@
 // App shell + in-app state machine. One reducer owns step, panels and results;
 // screens are swapped without a router.
 import { useEffect, useReducer, useState } from 'react';
-import { motion, MotionConfig } from 'motion/react';
 
 import { Footer } from './components/layout/Footer';
 import { StepNav } from './components/StepNav';
 import { Wordmark } from './components/Wordmark';
-import { screenVariants } from './components/motion';
 import { Add } from './screens/Add';
 import { Home } from './screens/Home';
 import { Report } from './screens/Report';
@@ -55,60 +53,56 @@ export default function App() {
   };
 
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="flex min-h-dvh flex-col bg-background">
-        <header
-          data-app-header
-          className="border-b border-border bg-card/70 px-4 py-3 print:hidden sm:px-6"
+    <div className="flex min-h-dvh flex-col bg-background" data-screen={state.step}>
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-md bg-card px-4 py-3 text-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to main content
+      </a>
+      <header data-app-header className="border-b border-border bg-card px-4 py-2 sm:px-6 print:hidden">
+        <Wordmark onHome={() => go('home')} current={state.step} />
+      </header>
+
+      <div className="mx-auto grid w-full max-w-7xl flex-1 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
+        <StepNav
+          step={state.step}
+          reviewReady={reviewReady}
+          reportReady={reportReady}
+          onNavigate={go}
+        />
+        <main
+          id="main-content"
+          className="min-w-0 px-4 pt-5 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:px-6 lg:pb-8"
         >
-          <Wordmark onHome={() => go('home')} current={state.step} />
-        </header>
-
-        <div className="mx-auto flex w-full max-w-6xl flex-1 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
-          <StepNav
-            step={state.step}
-            reviewReady={reviewReady}
-            reportReady={reportReady}
-            onNavigate={go}
-          />
-          <main
-            className="min-w-0 flex-1 px-4 pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:pb-16"
-            data-screen={state.step}
-          >
-            <motion.div
-              key={state.step}
-              variants={screenVariants}
-              initial="hidden"
-              animate="show"
-            >
-              {state.step === 'home' && <Home onStart={() => go('add')} onDemo={loadDemo} />}
-              {state.step === 'add' && (
-                <Add
-                  sources={state.sources}
-                  busy={busy}
-                  dispatch={dispatch}
-                  onBusyChange={setBusy}
-                />
-              )}
-              {state.step === 'review' && (
-                <Review sources={state.sources} dispatch={dispatch} onCompare={startCompare} />
-              )}
-              {state.step === 'report' && (
-                <Report
-                  results={state.results}
-                  sources={state.sources}
-                  onOpenResolver={openResolver}
-                  onBack={() => go('review')}
-                />
-              )}
-            </motion.div>
-          </main>
-        </div>
-
-        <div className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
-          <Footer />
-        </div>
+          <div key={state.step}>
+            {state.step === 'home' && <Home onStart={() => go('add')} onDemo={loadDemo} />}
+            {state.step === 'add' && (
+              <Add
+                sources={state.sources}
+                busy={busy}
+                dispatch={dispatch}
+                onBusyChange={setBusy}
+              />
+            )}
+            {state.step === 'review' && (
+              <Review sources={state.sources} dispatch={dispatch} onCompare={startCompare} />
+            )}
+            {state.step === 'report' && (
+              <Report
+                results={state.results}
+                sources={state.sources}
+                onOpenResolver={openResolver}
+                onBack={() => go('review')}
+              />
+            )}
+          </div>
+        </main>
       </div>
-    </MotionConfig>
+
+      <div className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+        <Footer />
+      </div>
+    </div>
   );
 }
